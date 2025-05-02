@@ -91,13 +91,13 @@ class JellyfinLibrary(MediaLibrary):
         for regex in MOVIE_PATTERNS:
             match = regex.match(name)
             if match:
-                title = match.group('title').strip()
-                year = match.group('year') if 'year' in match.groupdict() else None
-                provider_id = match.group('provider_id') if 'provider_id' in match.groupdict() else None
+                title = match.group("title").strip()
+                year = match.group("year") if "year" in match.groupdict() else None
+                provider_id = match.group("provider_id") if "provider_id" in match.groupdict() else None
                 provider = movie_id = None
                 if provider_id:
-                    provider, movie_id = provider_id.split('-', 1)
-                    provider = provider.rstrip('id')
+                    provider, movie_id = provider_id.split("-", 1)
+                    provider = provider.rstrip("id")
                 return MovieInfo(title=title, year=year, provider=provider, movie_id=movie_id)
         return None
 
@@ -118,7 +118,7 @@ class JellyfinLibrary(MediaLibrary):
     def parse_video_name(self, name: str) -> Optional[VideoInfo]:
         path = pathlib.Path(name)
         base_name = path.stem
-        parts = base_name.split(" - ")
+        parts = base_name.split(" - ")  # <spc><dash><spc> is required by Jellyfin
         if len(parts) > 1:
             # Do no take the media id for an edition
             if JELLYFIN_ID_PATTERN.match(parts[-1]):
@@ -128,7 +128,7 @@ class JellyfinLibrary(MediaLibrary):
             else:
                 return VideoInfo(
                     extension=path.suffix,
-                    edition=parts[-1].lstrip('[').rstrip(']'),
+                    edition=parts[-1].lstrip("[").rstrip("]"),
                 )
         return None
 
@@ -325,15 +325,14 @@ def process_movie(
             if item[1].samefile(item[0]):
                 if verbose:
                     log.info("Target video file '%s' already exists", item[1].name)
+                continue
             else:
                 log.info("Replacing video file '%s' → '%s'", item[0].name, item[1].name)
                 item[1].unlink()
-                item[1].hardlink_to(item[0])
-                stats.videos_linked += 1
         else:
             log.info("Linking video file '%s' → '%s'", item[0].name, item[1].name)
-            item[1].hardlink_to(item[0])
-            stats.videos_linked += 1
+        item[1].hardlink_to(item[0])
+        stats.videos_linked += 1
 
     if delete:
         # Remove stray items
