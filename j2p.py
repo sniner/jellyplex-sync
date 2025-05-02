@@ -214,24 +214,34 @@ def scan_media_library(
                 log.info("Stray item '%s' found", entry.name)
 
 
+@dataclass
+class AssetStats:
+    files_total: int = 0
+    files_linked: int = 0
+    items_removed: int = 0
+
+
 def process_assets_folder(
     source_path: pathlib.Path,
     target_path: pathlib.Path,
     *,
+    delete: bool = False,
     verbose: bool = False,
-):
+    stats: Optional[AssetStats] = None,
+) -> AssetStats:
     if not source_path.is_dir():
         raise ValueError(f"{source_path!s} is not a folder")
 
     target_path.mkdir(parents=True, exist_ok=True)
 
+    stats = stats if stats else AssetStats()
     synced_items = {}
 
     # Hardlink missing files and dive into subfolders
     for entry in source_path.iterdir():
         dest = target_path / entry.name
         if entry.is_dir():
-            process_assets_folder(entry, dest, verbose=verbose)
+            process_assets_folder(entry, dest, verbose=verbose, stats=stats)
         elif entry.is_file():
             if dest.exists():
                 if dest.samefile(entry):
@@ -240,16 +250,33 @@ def process_assets_folder(
                 else:
                     dest.unlink()
                     dest.hardlink_to(entry)
+                    stats.files_linked += 1
             else:
                 dest.hardlink_to(entry)
+                stats.files_linked += 1
+            stats.files_total += 1
         synced_items[entry.name] = dest
 
-    # Remove stray items
-    for entry in target_path.iterdir():
-        if entry.name in synced_items:
-            continue
-        log.info("Removing stray item '%s' in target folder", entry.name)
-        remove_item(entry)
+    if delete:
+        # Remove stray items
+        for entry in target_path.iterdir():
+            if entry.name in synced_items:
+                continue
+            log.info("Removing stray item '%s' in target folder", entry.name)
+            remove_item(entry)
+            stats.items_removed += 1
+
+    return stats
+
+
+@dataclass
+class MovieStats:
+    videos_total: int = 0
+    videos_linked: int = 0
+    items_removed: int = 0
+    asset_items_total: int = 0
+    asset_items_linked: int = 0
+    asset_items_removed: int = 0
 
 
 def process_movie(
@@ -258,10 +285,15 @@ def process_movie(
     source_path: pathlib.Path,
     movie: MovieInfo,
     *,
+    delete: bool = False,
     verbose: bool = False,
-) -> int:
+) -> MovieStats:
     target_path = target.movie_path(movie)
-    log.info(f"Processing '{source_path.name}' → '{target_path.name}'")
+
+    if verbose:
+        log.info(f"Processing '{source_path.name}' → '{target_path.name}'")
+
+    stats = MovieStats()
 
     videos_to_sync: Dict[str, Tuple[pathlib.Path, pathlib.Path]] = {}
     assets_to_sync: Dict[str, Tuple[pathlib.Path, pathlib.Path]] = {}
@@ -274,19 +306,16 @@ def process_movie(
             video_name = video_path.name
             if video_name in videos_to_sync:
                 log.error("Conflicting video file '%s'. Aborting.", entry.name)
-                return 0
+                return MovieStats()
             videos_to_sync[video_name] = (entry, video_path)
+            stats.videos_total += 1
         elif entry.is_dir():
             dir_name = entry.name
             # TODO: Just a quick fix for selecting and manipulating directories
-            if dir_name.startswith(".") or dir_name == "source":
+            if dir_name.startswith("."):
                 log.debug("Ignoring asset folder '%s'", dir_name)
                 continue
-            target_dir_name = dir_name
-            if dir_name == "extras":
-                # FIXME: will hurt if both 'extras' and 'other' exists in source folder
-                target_dir_name = "other"
-            assets_to_sync[target_dir_name] = (entry, target_path / target_dir_name)
+            assets_to_sync[dir_name] = (entry, target_path / dir_name)
 
     target_path.mkdir(parents=True, exist_ok=True)
 
@@ -300,27 +329,34 @@ def process_movie(
                 log.info("Replacing video file '%s' → '%s'", item[0].name, item[1].name)
                 item[1].unlink()
                 item[1].hardlink_to(item[0])
+                stats.videos_linked += 1
         else:
             log.info("Linking video file '%s' → '%s'", item[0].name, item[1].name)
             item[1].hardlink_to(item[0])
+            stats.videos_linked += 1
 
-    # Remove stray items
-    for entry in target_path.iterdir():
-        if entry.name in videos_to_sync or entry.name in assets_to_sync:
-            continue
-        log.info("Removing stray item '%s' in movie folder", entry.name)
-        remove_item(entry)
+    if delete:
+        # Remove stray items
+        for entry in target_path.iterdir():
+            if entry.name in videos_to_sync or entry.name in assets_to_sync:
+                continue
+            log.info("Removing stray item '%s' in movie folder", entry.name)
+            remove_item(entry)
+            stats.items_removed += 1
 
     # Sync assets folders
     for _, item in assets_to_sync.items():
-        process_assets_folder(item[0], item[1], verbose=verbose)
+        s = process_assets_folder(item[0], item[1], delete=delete, verbose=verbose)
+        stats.asset_items_total += s.files_total
+        stats.asset_items_linked += s.files_linked
+        stats.asset_items_removed += s.items_removed
 
-    return 0
+    return stats
 
 
 def sync(
-    src: str,
-    dst: str,
+    source: str,
+    target: str,
     *,
     delete: bool = False,
     create: bool = False,
@@ -330,25 +366,39 @@ def sync(
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    source = JellyfinLibrary(pathlib.Path(src).resolve())
-    target = PlexLibrary(pathlib.Path(dst).resolve())
+    source_lib = JellyfinLibrary(pathlib.Path(source).resolve())
+    target_lib = PlexLibrary(pathlib.Path(target).resolve())
 
-    log.info(f"Source library: {source.base_dir}")
-    log.info(f"Target library: {target.base_dir}")
+    log.info(f"Source library: {source_lib.base_dir}")
+    log.info(f"Target library: {target_lib.base_dir}")
 
-    if not source.base_dir.is_dir():
-        log.error("Source directory '%s' does not exist", source.base_dir)
+    if not source_lib.base_dir.is_dir():
+        log.error("Source directory '%s' does not exist", source_lib.base_dir)
         return 1
 
-    if not target.base_dir.is_dir():
+    if not target_lib.base_dir.is_dir():
         if create:
-            target.base_dir.mkdir(parents=True)
+            target_lib.base_dir.mkdir(parents=True)
         else:
-            log.error("Target directory '%s' does not exist", target.base_dir)
+            log.error("Target directory '%s' does not exist", target_lib.base_dir)
             return 1
 
-    for s, _t, m in scan_media_library(source, target, delete=delete):
-        process_movie(source, target, s, m, verbose=verbose)
+    stat_movies: int = 0
+    stat_items_linked: int = 0
+    stat_items_removed: int = 0
+
+    for src, _, movie in scan_media_library(source_lib, target_lib, delete=delete):
+        s = process_movie(source_lib, target_lib, src, movie, delete=delete, verbose=verbose)
+        stat_movies += 1
+        stat_items_linked += s.asset_items_linked + s.videos_linked
+        stat_items_removed += s.asset_items_removed + s.items_removed
+
+    summary = (
+        f"Summary: {stat_movies} movies found, "
+        f"{stat_items_linked} files updated, "
+        f"{stat_items_removed} files removed."
+    )
+    logging.info(summary)
 
     return 0
 
