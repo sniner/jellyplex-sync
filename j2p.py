@@ -36,6 +36,9 @@ MOVIE_PATTERNS = [
     re.compile(r"^(?P<title>.+?) \[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"),
     re.compile(r"^(?P<title>.+?)$"),
 ]
+JELLYFIN_ID_PATTERN = re.compile(r"\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]")
+
+ACCEPTED_VIDEO_SUFFIXES = set([".mkv", ".m4v"])
 
 
 class MediaLibrary(ABC):
@@ -71,7 +74,7 @@ class MediaLibrary(ABC):
         return self.parse_video_name(path.name)
 
     def scan(self) -> Generator[Tuple[pathlib.Path, MovieInfo], None, None]:
-        for entry in self.base_dir.iterdir():
+        for entry in self.base_dir.glob("*"):
             if not entry.is_dir():
                 continue
 
@@ -117,13 +120,16 @@ class JellyfinLibrary(MediaLibrary):
         base_name = path.stem
         parts = base_name.split(" - ")
         if len(parts) > 1:
-            # Simple fix: Do no take the media id for an edition
-            if "id-" in parts[-1]:
-                return None
-            return VideoInfo(
-                extension=path.suffix,
-                edition=parts[-1].lstrip('[').rstrip(']'),
-            )
+            # Do no take the media id for an edition
+            if JELLYFIN_ID_PATTERN.match(parts[-1]):
+                return VideoInfo(
+                    extension=path.suffix,
+                )
+            else:
+                return VideoInfo(
+                    extension=path.suffix,
+                    edition=parts[-1].lstrip('[').rstrip(']'),
+                )
         return None
 
 
@@ -161,7 +167,7 @@ def scan_media_library(
     target: MediaLibrary,
     *,
     delete: bool = False,
-) -> Generator[Tuple[pathlib.Path, pathlib.Path, MovieInfo]]:
+) -> Generator[Tuple[pathlib.Path, pathlib.Path, MovieInfo], None, None]:
     """Iterate over the source library and determine all movie folders.
     Yields a tuple for each movie folder:
         (source: pathlib.Path, destination: pathlib.Path, movie: MovieInfo)
@@ -187,7 +193,8 @@ def scan_media_library(
     # If there are any conflicts we bail out now
     if conflicting_source_dirs:
         for dst, src in conflicting_source_dirs.items():
-            log.error(f"Conflicting folders: {', '.join(f'\'{s}\'' for s in src)} → '{dst}'")
+            quoted = [f"'{s}'" for s in src]
+            log.error(f"Conflicting folders: {', '.join(quoted)} → '{dst}'")
         log.info("You have to solve the conflicts to proceed")
         return
 
@@ -259,10 +266,11 @@ def process_movie(
     videos_to_sync: Dict[str, Tuple[pathlib.Path, pathlib.Path]] = {}
     assets_to_sync: Dict[str, Tuple[pathlib.Path, pathlib.Path]] = {}
 
+    # Scan for video files and assets
     for entry in source_path.glob("*"):
-        if entry.is_file() and entry.suffix.lower() == ".mkv":
+        if entry.is_file() and entry.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
             video = source.parse_video_name(entry.name)
-            video_path = target.video_path(movie, video or VideoInfo(extension=".mkv"))
+            video_path = target.video_path(movie, video or VideoInfo(extension=entry.suffix.lower()))
             video_name = video_path.name
             if video_name in videos_to_sync:
                 log.error("Conflicting video file '%s'. Aborting.", entry.name)
@@ -270,7 +278,7 @@ def process_movie(
             videos_to_sync[video_name] = (entry, video_path)
         elif entry.is_dir():
             dir_name = entry.name
-            # Quick fix for selecting and matching directories
+            # TODO: Just a quick fix for selecting and manipulating directories
             if dir_name.startswith(".") or dir_name == "source":
                 log.debug("Ignoring asset folder '%s'", dir_name)
                 continue
@@ -296,7 +304,7 @@ def process_movie(
             log.info("Linking video file '%s' → '%s'", item[0].name, item[1].name)
             item[1].hardlink_to(item[0])
 
-    # Remove stray item
+    # Remove stray items
     for entry in target_path.iterdir():
         if entry.name in videos_to_sync or entry.name in assets_to_sync:
             continue
@@ -310,21 +318,20 @@ def process_movie(
     return 0
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Create a Plex compatible media library from a Jellyfin library.")
-    parser.add_argument("src", help="Jellyfin media library")
-    parser.add_argument("dst", help="Plex media library")
-    parser.add_argument("--delete", action="store_true", help="Remove stray folders from target library")
-    parser.add_argument("--create", action="store_true", help="Create missing target library")
-    parser.add_argument("--verbose", action="store_true", help="Show more information messages")
-    parser.add_argument("--debug", action="store_true", help="Show debug messages")
-    args = parser.parse_args()
-
-    if args.debug:
+def sync(
+    src: str,
+    dst: str,
+    *,
+    delete: bool = False,
+    create: bool = False,
+    verbose: bool = False,
+    debug: bool = False,
+) -> int:
+    if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    source = JellyfinLibrary(pathlib.Path(args.src).resolve())
-    target = PlexLibrary(pathlib.Path(args.dst).resolve())
+    source = JellyfinLibrary(pathlib.Path(src).resolve())
+    target = PlexLibrary(pathlib.Path(dst).resolve())
 
     log.info(f"Source library: {source.base_dir}")
     log.info(f"Target library: {target.base_dir}")
@@ -334,16 +341,45 @@ def main() -> int:
         return 1
 
     if not target.base_dir.is_dir():
-        if args.create:
+        if create:
             target.base_dir.mkdir(parents=True)
         else:
             log.error("Target directory '%s' does not exist", target.base_dir)
             return 1
 
-    for s, _t, m in scan_media_library(source, target, delete=args.delete):
-        process_movie(source, target, s, m, verbose=args.verbose)
+    for s, _t, m in scan_media_library(source, target, delete=delete):
+        process_movie(source, target, s, m, verbose=verbose)
 
     return 0
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Create a Plex compatible media library from a Jellyfin library.")
+    parser.add_argument("source", help="Jellyfin media library")
+    parser.add_argument("target", help="Plex media library")
+    parser.add_argument("--delete", action="store_true", help="Remove stray folders from target library")
+    parser.add_argument("--create", action="store_true", help="Create missing target library")
+    parser.add_argument("--verbose", action="store_true", help="Show more information messages")
+    parser.add_argument("--debug", action="store_true", help="Show debug messages")
+    args = parser.parse_args()
+
+    result = 0
+    try:
+        result = sync(
+            args.source,
+            args.target,
+            delete=args.delete,
+            create=args.create,
+            verbose=args.verbose,
+            debug=args.debug,
+        )
+    except KeyboardInterrupt:
+        log.info("INTERRUPTED")
+        result = 10
+    except Exception as exc:
+        log.error("Exception: %s", exc)
+        result = 99
+    exit(result)
 
 
 if __name__ == "__main__":
@@ -353,13 +389,12 @@ if __name__ == "__main__":
         format="%(levelname)s: %(asctime)s -- %(message)s",
     )
 
-    result = 0
-    try:
-        result = main()
-    except KeyboardInterrupt:
-        log.info("INTERRUPTED")
-        result = 10
-    except Exception as exc:
-        log.error("Exception: %s", exc)
-        result = 99
-    exit(result)
+    # If you want to use it as a CLI tool:
+    main()
+    # For Unraid 'User Scripts' use that:
+    # sync(
+    #     "/mnt/media/Movies",
+    #     "/mnt/media/Plex/Movies",
+    #     create=True,
+    #     delete=True,
+    # )
