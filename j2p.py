@@ -8,7 +8,7 @@ import shutil
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Generator, List, Optional, Tuple
+from typing import Dict, Generator, List, Optional, Set, Tuple
 
 
 log = logging.getLogger(__name__)
@@ -28,8 +28,12 @@ class VideoInfo:
     extension: str
     edition: Optional[str] = None
     resolution: Optional[str] = None
+    tags: Optional[Set[str]] = None
 
 
+RESOLUTION_PATTERN = re.compile(r"\d{3,4}[pi]")
+
+JELLYFIN_ID_PATTERN = re.compile(r"\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]")
 JELLYFIN_MOVIE_PATTERNS = [
     re.compile(r"^(?P<title>.+?)\s+\((?P<year>\d{4})\)\s* - \s*\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"),
     re.compile(r"^(?P<title>.+?)\s+\((?P<year>\d{4})\)\s+\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"),
@@ -37,19 +41,19 @@ JELLYFIN_MOVIE_PATTERNS = [
     re.compile(r"^(?P<title>.+?)\s+\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"),
     re.compile(r"^(?P<title>.+?)$"),
 ]
-JELLYFIN_ID_PATTERN = re.compile(r"\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]")
 
 PLEX_MOVIE_PATTERN = re.compile(r"^(?P<title>.+?)\s+\((?P<year>\d{4})\)")
-PLEX_METADATA_PROVIDER = set(["imdb", "tmdb", "tvdb"])
 PLEX_META_BLOCK_PATTERN = re.compile(r"(\{([A-Za-z]+)-([^}]+)\})")
+PLEX_META_INFO_PATTERN = re.compile(r"(\[([^]]+)\])")
+PLEX_METADATA_PROVIDER = {"imdb", "tmdb", "tvdb"}
 
-ACCEPTED_VIDEO_SUFFIXES = set([".mkv", ".m4v"])
+ACCEPTED_VIDEO_SUFFIXES = {".mkv", ".m4v"}
 
 RESOLUTION_TABLE = [
     re.compile(r"4k"),
     re.compile(r"BD"),
     re.compile(r"DVD"),
-    re.compile(r"\d{3,4}[pi]"),
+    RESOLUTION_PATTERN,
 ]
 
 
@@ -72,18 +76,12 @@ class MediaLibrary(ABC):
         return self.movie_path(movie) / self.video_name(movie, video)
 
     @abstractmethod
-    def parse_movie_name(self, name: str) -> Optional[MovieInfo]:
-        ...
-
     def parse_movie_path(self, path: pathlib.Path) -> Optional[MovieInfo]:
-        return self.parse_movie_name(path.name)
+        ...
 
     @abstractmethod
-    def parse_video_name(self, name: str) -> Optional[VideoInfo]:
-        ...
-
     def parse_video_path(self, path: pathlib.Path) -> Optional[VideoInfo]:
-        return self.parse_video_name(path.name)
+        ...
 
     def scan(self) -> Generator[Tuple[pathlib.Path, MovieInfo], None, None]:
         for entry in self.base_dir.glob("*"):
@@ -99,7 +97,8 @@ class MediaLibrary(ABC):
 
 
 class JellyfinLibrary(MediaLibrary):
-    def parse_movie_name(self, name: str) -> Optional[MovieInfo]:
+    def parse_movie_path(self, path: pathlib.Path) -> Optional[MovieInfo]:
+        name = path.name
         for regex in JELLYFIN_MOVIE_PATTERNS:
             match = regex.match(name)
             if match:
@@ -139,8 +138,7 @@ class JellyfinLibrary(MediaLibrary):
                 return None, text
         return text, None
 
-    def parse_video_name(self, name: str) -> Optional[VideoInfo]:
-        path = pathlib.Path(name)
+    def parse_video_path(self, path: pathlib.Path) -> Optional[VideoInfo]:
         base_name = path.stem
         parts = base_name.split(" - ")  # <spc><dash><spc> is required by Jellyfin
         if len(parts) > 1:
@@ -182,7 +180,14 @@ class PlexLibrary(MediaLibrary):
         for blk, key, val in PLEX_META_BLOCK_PATTERN.findall(name):
             yield key, val, blk
 
-    def parse_movie_name(self, name: str) -> Optional[MovieInfo]:
+    def _parse_info_blocks(self, name: str) -> Generator[Tuple[str, str], None, None]:
+        # Find all '[METADATA]' instances
+        for blk, info in PLEX_META_INFO_PATTERN.findall(name):
+            yield info, blk
+
+    def parse_movie_path(self, path: pathlib.Path) -> Optional[MovieInfo]:
+        name = path.name
+
         # Find metadata provider and movie id
         leftover = name
         provider = movie_id = None
@@ -192,8 +197,16 @@ class PlexLibrary(MediaLibrary):
                 provider = p.strip()
                 movie_id = val.strip()
             leftover = leftover.replace(blk, "")
+
+        # Remove additional metadata
+        for info, blk in self._parse_info_blocks(leftover):
+            leftover = leftover.replace(blk, "")
+
+        # Cleanup remaining text
+        leftover = re.sub(r"\s+", " ", leftover)
         leftover = leftover.strip()
 
+        # Parse movie title and year
         match = PLEX_MOVIE_PATTERN.match(leftover)
         if match:
             title = match.group("title").strip()
@@ -209,21 +222,37 @@ class PlexLibrary(MediaLibrary):
             movie_id=movie_id
         )
 
-    def parse_video_name(self, name: str) -> Optional[VideoInfo]:
-        path = pathlib.Path(name)
-        base_name = path.stem
+    def parse_video_path(self, path: pathlib.Path) -> Optional[VideoInfo]:
+        name = path.stem
+        leftover = name
 
         # Find edition
-        for key, val, _ in self._parse_meta_blocks(base_name):
+        edition: Optional[str] = None
+        for key, val, blk in self._parse_meta_blocks(name):
             if key.lower() == "edition":
-                return VideoInfo(
-                    extension=path.suffix,
-                    edition=val.strip(),
-                )
+                edition = val
+            leftover = leftover.replace(blk, "")
 
-        # No edition
+        # Find additional metadata
+        tags: Set[str] = set()
+        resolution: Optional[str] = None
+        for info, blk in self._parse_info_blocks(leftover):
+            tag = info.strip()
+            if RESOLUTION_PATTERN.match(tag):
+                resolution = tag
+            else:
+                tags.add(tag)
+            leftover = leftover.replace(blk, "")
+
+        # Cleanup remaining text
+        leftover = re.sub(r"\s+", " ", leftover)
+        leftover = leftover.strip()
+
         return VideoInfo(
+            edition=edition,
             extension=path.suffix,
+            resolution=resolution,
+            tags=tags if tags else None,
         )
 
 
@@ -373,7 +402,7 @@ def process_movie(
     # Scan for video files and assets
     for entry in source_path.glob("*"):
         if entry.is_file() and entry.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
-            video = source.parse_video_name(entry.name)
+            video = source.parse_video_path(entry)
             video_path = target.video_path(movie, video or VideoInfo(extension=entry.suffix.lower()))
             video_name = video_path.name
             if video_name in videos_to_sync:
