@@ -49,6 +49,7 @@ RESOLUTION_TABLE = [
     re.compile(r"4k"),
     re.compile(r"BD"),
     re.compile(r"DVD"),
+    re.compile(r"\d{3,4}[pi]"),
 ]
 
 
