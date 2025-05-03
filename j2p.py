@@ -27,18 +27,29 @@ class VideoInfo:
     """Metadata for a single video file"""
     extension: str
     edition: Optional[str] = None
+    resolution: Optional[str] = None
 
 
-MOVIE_PATTERNS = [
-    re.compile(r"^(?P<title>.+?) \((?P<year>\d{4})\) - \[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"),
-    re.compile(r"^(?P<title>.+?) \((?P<year>\d{4})\) \[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"),
-    re.compile(r"^(?P<title>.+?) \((?P<year>\d{4})\)$"),
-    re.compile(r"^(?P<title>.+?) \[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"),
+JELLYFIN_MOVIE_PATTERNS = [
+    re.compile(r"^(?P<title>.+?)\s+\((?P<year>\d{4})\)\s* - \s*\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"),
+    re.compile(r"^(?P<title>.+?)\s+\((?P<year>\d{4})\)\s+\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"),
+    re.compile(r"^(?P<title>.+?)\s+\((?P<year>\d{4})\)$"),
+    re.compile(r"^(?P<title>.+?)\s+\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"),
     re.compile(r"^(?P<title>.+?)$"),
 ]
 JELLYFIN_ID_PATTERN = re.compile(r"\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]")
 
+PLEX_MOVIE_PATTERN = re.compile(r"^(?P<title>.+?)\s+\((?P<year>\d{4})\)")
+PLEX_METADATA_PROVIDER = set(["imdb", "tmdb", "tvdb"])
+PLEX_META_BLOCK_PATTERN = re.compile(r"(\{([A-Za-z]+)-([^}]+)\})")
+
 ACCEPTED_VIDEO_SUFFIXES = set([".mkv", ".m4v"])
+
+RESOLUTION_TABLE = [
+    re.compile(r"4k"),
+    re.compile(r"BD"),
+    re.compile(r"DVD"),
+]
 
 
 class MediaLibrary(ABC):
@@ -88,7 +99,7 @@ class MediaLibrary(ABC):
 
 class JellyfinLibrary(MediaLibrary):
     def parse_movie_name(self, name: str) -> Optional[MovieInfo]:
-        for regex in MOVIE_PATTERNS:
+        for regex in JELLYFIN_MOVIE_PATTERNS:
             match = regex.match(name)
             if match:
                 title = match.group("title").strip()
@@ -115,6 +126,18 @@ class JellyfinLibrary(MediaLibrary):
             parts.append(f"- {video.edition}")
         return f"{' '.join(parts)}{video.extension}"
 
+    @staticmethod
+    def _map_edition_or_resolution(text: str) -> Tuple[Optional[str], Optional[str]]:
+        """Parses a text label from a filename and returns a resolution if
+        matched (e.g., BD, 4K); otherwise, treats it as a custom edition
+        (e.g., Director's Cut). This reflects a personal naming convention.
+        """
+        for regex in RESOLUTION_TABLE:
+            match = regex.match(text)
+            if match:
+                return None, text
+        return text, None
+
     def parse_video_name(self, name: str) -> Optional[VideoInfo]:
         path = pathlib.Path(name)
         base_name = path.stem
@@ -126,9 +149,12 @@ class JellyfinLibrary(MediaLibrary):
                     extension=path.suffix,
                 )
             else:
+                possible_edition = parts[-1].strip().lstrip("[").rstrip("]")
+                edition, res = self._map_edition_or_resolution(possible_edition)
                 return VideoInfo(
                     extension=path.suffix,
-                    edition=parts[-1].lstrip("[").rstrip("]"),
+                    edition=edition,
+                    resolution=res,
                 )
         return None
 
@@ -146,13 +172,58 @@ class PlexLibrary(MediaLibrary):
         parts = [self.movie_name(movie)]
         if video.edition:
             parts.append(f"{{edition-{video.edition}}}")
+        if video.resolution:
+            parts.append(f"[{video.resolution}]")
         return f"{' '.join(parts)}{video.extension}"
 
+    def _parse_meta_blocks(self, name: str) -> Generator[Tuple[str, str, str], None, None]:
+        # Find all '{KEY-VALUE}' instances
+        for blk, key, val in PLEX_META_BLOCK_PATTERN.findall(name):
+            yield key, val, blk
+
     def parse_movie_name(self, name: str) -> Optional[MovieInfo]:
-        raise NotImplementedError("parse_movie_name not implemented")
+        # Find metadata provider and movie id
+        leftover = name
+        provider = movie_id = None
+        for key, val, blk in self._parse_meta_blocks(name):
+            p = key.lower()
+            if p in PLEX_METADATA_PROVIDER:
+                provider = p.strip()
+                movie_id = val.strip()
+            leftover = leftover.replace(blk, "")
+        leftover = leftover.strip()
+
+        match = PLEX_MOVIE_PATTERN.match(leftover)
+        if match:
+            title = match.group("title").strip()
+            year = match.group("year") if "year" in match.groupdict() else None
+        else:
+            title = leftover
+            year = None
+
+        return MovieInfo(
+            title=title,
+            year=year,
+            provider=provider,
+            movie_id=movie_id
+        )
 
     def parse_video_name(self, name: str) -> Optional[VideoInfo]:
-        raise NotImplementedError("parse_video_name not implemented")
+        path = pathlib.Path(name)
+        base_name = path.stem
+
+        # Find edition
+        for key, val, _ in self._parse_meta_blocks(base_name):
+            if key.lower() == "edition":
+                return VideoInfo(
+                    extension=path.suffix,
+                    edition=val.strip(),
+                )
+
+        # No edition
+        return VideoInfo(
+            extension=path.suffix,
+        )
 
 
 def remove_item(item: pathlib.Path) -> None:

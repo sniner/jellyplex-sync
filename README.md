@@ -75,12 +75,16 @@ Movies
 └── Das Boot (1981) [imdbid-tt0082096]
     ├── Das Boot (1981) [imdbid-tt0082096] - Director's Cut.mkv
     ├── Das Boot (1981) [imdbid-tt0082096] - Theatrical Cut.mkv
-    └── others
+    └── other
         ├── Production Photos.mkv
         └── Making of.mkv
 ```
 
 Each movie must reside in its own folder, with optional subfolders for extras. Different editions (e.g., Director's Cut, Theatrical Cut) must be named accordingly.
+
+### Special filename handling
+
+Jellyfin doesn't distinguish between editions and versions (i.e., different resolutions). To work around this, I appended tags like "DVD", "BD", or "4k" to filenames in my library, ensuring the highest quality appears first and is selected by default in Jellyfin. Plex, on the other hand, supports both editions and versions, so these specific tags are converted into Plex versions, while all other suffixes are treated as editions. This is a very personal solution that most users likely won't need — if it doesn't fit your setup, you'll have to adjust the code.
 
 ## License
 
