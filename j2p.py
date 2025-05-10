@@ -8,7 +8,7 @@ import shutil
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Generator, List, Optional, Set, Tuple
+from typing import Callable, Dict, Generator, List, Optional, Set, Tuple, Type, Union
 
 
 log = logging.getLogger(__name__)
@@ -31,8 +31,6 @@ class VideoInfo:
     tags: Optional[Set[str]] = None
 
 
-RESOLUTION_PATTERN = re.compile(r"\d{3,4}[pi]")
-
 JELLYFIN_ID_PATTERN = re.compile(r"\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]")
 JELLYFIN_MOVIE_PATTERNS = [
     re.compile(r"^(?P<title>.+?)\s+\((?P<year>\d{4})\)\s* - \s*\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"),
@@ -49,17 +47,12 @@ PLEX_METADATA_PROVIDER = {"imdb", "tmdb", "tvdb"}
 
 ACCEPTED_VIDEO_SUFFIXES = {".mkv", ".m4v"}
 
-RESOLUTION_TABLE = [
-    re.compile(r"4k"),
-    re.compile(r"BD"),
-    re.compile(r"DVD"),
-    RESOLUTION_PATTERN,
-]
+RESOLUTION_PATTERN = re.compile(r"\d{3,4}[pi]$")
 
 
 class MediaLibrary(ABC):
     def __init__(self, base_dir: pathlib.Path):
-        self.base_dir = base_dir
+        self.base_dir = base_dir.resolve()
 
     @abstractmethod
     def movie_name(self, movie: MovieInfo) -> str:
@@ -96,7 +89,81 @@ class MediaLibrary(ABC):
             yield entry, movie
 
 
+class VariantParser(ABC):
+    def __init__(self, library: MediaLibrary):
+        self.library = library
+
+    @abstractmethod
+    def parse(self, variant: str, video: VideoInfo) -> VideoInfo:
+        ...
+
+class SimpleVariantParser(VariantParser):
+    def parse(self, variant: str, video: VideoInfo) -> VideoInfo:
+        return VideoInfo(
+            extension=video.extension,
+            edition=variant.strip(),
+            resolution=video.resolution,
+            tags=video.tags,
+        )
+
+@dataclass
+class ResParser:
+    pattern: re.Pattern
+    mapping: Union[Callable[[re.Match[str]], List[str]], List[str]]
+
+class SninerVariantParser(VariantParser):
+    RES_MAP: List[ResParser] = [
+        ResParser(re.compile(r"4k([\.\-]([\w\d]+))?$"), lambda m: ["2160p", m.group(2)] if m.group(1) else ["2160p"]),
+        ResParser(re.compile(r"BD([\.\-]([\w\d]+))?$"), lambda m: ["1080p", m.group(2)] if m.group(1) else ["1080p"]),
+        ResParser(re.compile(r"DVD([\.\-]([\w\d]+))?$"), lambda m: ["", "DVD", m.group(2)] if m.group(1) else ["", "DVD"]),
+        ResParser(RESOLUTION_PATTERN, lambda m: [m.group(0)]),
+    ]
+
+    def _match_resolution(self, word: str) -> Tuple[Optional[str], Set[str]]:
+        tags: List[str] = []
+        for mapper in self.RES_MAP:
+            match = mapper.pattern.match(word)
+            if match:
+                if callable(mapper.mapping):
+                    tags = mapper.mapping(match)
+                else:
+                    tags = mapper.mapping
+                break
+
+        return tags[0] if tags else None, set(tags[1:])
+
+    def parse(self, variant: str, video: VideoInfo) -> VideoInfo:
+        edition: Optional[str] = None
+
+        variant_parts = variant.split(" ")
+
+        res, tags = self._match_resolution(variant_parts[0])
+        if res or tags:
+            edition = " ".join(variant_parts[1:])
+        elif len(variant_parts) > 1:
+            res, tags = self._match_resolution(variant_parts[-1])
+            if res or tags:
+                edition = " ".join(variant_parts[:-1])
+            else:
+                edition = variant
+        else:
+            edition = variant
+
+        tags = (video.tags or set()).union(tags)
+
+        return VideoInfo(
+            extension=video.extension,
+            edition=edition if edition else None,
+            resolution=res,
+            tags=tags if tags else None,
+        )
+
+
 class JellyfinLibrary(MediaLibrary):
+    def __init__(self, base_dir: pathlib.Path, *, variant_parser: Optional[Type[VariantParser]] = None):
+        super().__init__(base_dir)
+        self.variant_parser = variant_parser(self) if variant_parser else SninerVariantParser(self)
+
     def parse_movie_path(self, path: pathlib.Path) -> Optional[MovieInfo]:
         name = path.name
         for regex in JELLYFIN_MOVIE_PATTERNS:
@@ -126,36 +193,19 @@ class JellyfinLibrary(MediaLibrary):
             parts.append(f"- {video.edition}")
         return f"{' '.join(parts)}{video.extension}"
 
-    @staticmethod
-    def _map_edition_or_resolution(text: str) -> Tuple[Optional[str], Optional[str]]:
-        """Parses a text label from a filename and returns a resolution if
-        matched (e.g., BD, 4K); otherwise, treats it as a custom edition
-        (e.g., Director's Cut). This reflects a personal naming convention.
-        """
-        for regex in RESOLUTION_TABLE:
-            match = regex.match(text)
-            if match:
-                return None, text
-        return text, None
-
     def parse_video_path(self, path: pathlib.Path) -> Optional[VideoInfo]:
         base_name = path.stem
-        parts = base_name.split(" - ")  # <spc><dash><spc> is required by Jellyfin
+        video = VideoInfo(extension=path.suffix)
+        parts = base_name.split(" - ")  # <spc><dash><spc> is required by Jellyfin for variants
         if len(parts) > 1:
             # Do no take the media id for an edition
             if JELLYFIN_ID_PATTERN.match(parts[-1]):
-                return VideoInfo(
-                    extension=path.suffix,
-                )
+                return video
             else:
-                possible_edition = parts[-1].strip().lstrip("[").rstrip("]")
-                edition, res = self._map_edition_or_resolution(possible_edition)
-                return VideoInfo(
-                    extension=path.suffix,
-                    edition=edition,
-                    resolution=res,
-                )
-        return None
+                # The variant is the substring after the final ' – ' in the filename.
+                variant = parts[-1].strip().lstrip("[").rstrip("]")
+                return self.variant_parser.parse(variant, video)
+        return video
 
 
 class PlexLibrary(MediaLibrary):
@@ -171,6 +221,9 @@ class PlexLibrary(MediaLibrary):
         parts = [self.movie_name(movie)]
         if video.edition:
             parts.append(f"{{edition-{video.edition}}}")
+        if video.tags:
+            tags = [f"[{t}]" for t in video.tags]
+            parts.append("".join(tags))
         if video.resolution:
             parts.append(f"[{video.resolution}]")
         return f"{' '.join(parts)}{video.extension}"
@@ -263,11 +316,20 @@ def remove_item(item: pathlib.Path) -> None:
         shutil.rmtree(item)
 
 
+@dataclass
+class LibraryStats:
+    movies_total: int = 0
+    movies_processed: int = 0
+    items_removed: int = 0
+
+
 def scan_media_library(
     source: MediaLibrary,
     target: MediaLibrary,
     *,
+    dry_run: bool = False,
     delete: bool = False,
+    stats: Optional[LibraryStats] = None,
 ) -> Generator[Tuple[pathlib.Path, pathlib.Path, MovieInfo], None, None]:
     """Iterate over the source library and determine all movie folders.
     Yields a tuple for each movie folder:
@@ -276,6 +338,7 @@ def scan_media_library(
     if source is target or source.base_dir == target.base_dir:
         raise ValueError("Can not transfer library into itself")
 
+    stats = stats or LibraryStats()
     movies_to_sync: Dict[str, Optional[Tuple[pathlib.Path, MovieInfo]]] = {}
     conflicting_source_dirs: Dict[str, List[str]] = {}
 
@@ -290,29 +353,36 @@ def scan_media_library(
             movies_to_sync[target_name] = None
         else:
             movies_to_sync[target_name] = (entry, movie)
+        stats.movies_total += 1
 
     # If there are any conflicts we bail out now
     if conflicting_source_dirs:
         for dst, src in conflicting_source_dirs.items():
             quoted = [f"'{s}'" for s in src]
             log.error(f"Conflicting folders: {', '.join(quoted)} → '{dst}'")
-        log.info("You have to solve the conflicts to proceed")
+        log.info("You have to solve the conflicts first to proceed")
         return
 
     # Yield items for sync
     for target_name, item in movies_to_sync.items():
         if not item:
             continue
+        stats.movies_processed += 1
         yield item[0], target.base_dir / target_name, item[1]
 
     # Remove stray items in target library
     for entry in target.base_dir.iterdir():
         if entry.name not in movies_to_sync:
             if delete:
-                log.info("Removing stray item '%s' in target library", entry.name)
-                remove_item(entry)
+                if dry_run:
+                    log.info("DELETE %s", entry)
+                else:
+                    log.info("Removing stray item '%s' in target library", entry.name)
+                    remove_item(entry)
+                stats.items_removed += 1
             else:
-                log.info("Stray item '%s' found", entry.name)
+                if not dry_run:
+                    log.info("Stray item '%s' found", entry.name)
 
 
 @dataclass
@@ -326,6 +396,7 @@ def process_assets_folder(
     source_path: pathlib.Path,
     target_path: pathlib.Path,
     *,
+    dry_run: bool = False,
     delete: bool = False,
     verbose: bool = False,
     stats: Optional[AssetStats] = None,
@@ -333,7 +404,11 @@ def process_assets_folder(
     if not source_path.is_dir():
         raise ValueError(f"{source_path!s} is not a folder")
 
-    target_path.mkdir(parents=True, exist_ok=True)
+    if not target_path.exists():
+        if dry_run:
+            log.info("MKDIR  %s", target_path)
+        else:
+            target_path.mkdir(parents=True, exist_ok=True)
 
     stats = stats if stats else AssetStats()
     synced_items = {}
@@ -342,29 +417,38 @@ def process_assets_folder(
     for entry in source_path.iterdir():
         dest = target_path / entry.name
         if entry.is_dir():
-            process_assets_folder(entry, dest, verbose=verbose, stats=stats)
+            process_assets_folder(entry, dest, verbose=verbose, stats=stats, dry_run=dry_run)
         elif entry.is_file():
             if dest.exists():
                 if dest.samefile(entry):
                     if verbose:
                         log.debug("Target file '%s' already exists, skipping", entry.name)
                 else:
-                    dest.unlink()
-                    dest.hardlink_to(entry)
+                    if dry_run:
+                        log.info("RELINK %s", entry)
+                    else:
+                        dest.unlink()
+                        dest.hardlink_to(entry)
                     stats.files_linked += 1
             else:
-                dest.hardlink_to(entry)
+                if dry_run:
+                    log.info("LINK   %s", dest)
+                else:
+                    dest.hardlink_to(entry)
                 stats.files_linked += 1
             stats.files_total += 1
         synced_items[entry.name] = dest
 
-    if delete:
+    if delete and target_path.is_dir():
         # Remove stray items
         for entry in target_path.iterdir():
             if entry.name in synced_items:
                 continue
             log.info("Removing stray item '%s' in target folder", entry.name)
-            remove_item(entry)
+            if dry_run:
+                log.info("DELETE %s", entry.name)
+            else:
+                remove_item(entry)
             stats.items_removed += 1
 
     return stats
@@ -386,6 +470,7 @@ def process_movie(
     source_path: pathlib.Path,
     movie: MovieInfo,
     *,
+    dry_run: bool = False,
     delete: bool = False,
     verbose: bool = False,
 ) -> MovieStats:
@@ -418,7 +503,11 @@ def process_movie(
                 continue
             assets_to_sync[dir_name] = (entry, target_path / dir_name)
 
-    target_path.mkdir(parents=True, exist_ok=True)
+    if not target_path.exists():
+        if dry_run:
+            log.info("MKDIR  %s", target_path)
+        else:
+            target_path.mkdir(parents=True, exist_ok=True)
 
     # Hardlink missing video files
     for _video_name, item in videos_to_sync.items():
@@ -429,24 +518,32 @@ def process_movie(
                 continue
             else:
                 log.info("Replacing video file '%s' → '%s'", item[0].name, item[1].name)
-                item[1].unlink()
+                if dry_run:
+                    log.info("DELETE %s", item[1])
+                else:
+                    item[1].unlink()
+        if dry_run:
+            log.info("LINK   %s", item[1])
         else:
             log.info("Linking video file '%s' → '%s'", item[0].name, item[1].name)
-        item[1].hardlink_to(item[0])
+            item[1].hardlink_to(item[0])
         stats.videos_linked += 1
 
-    if delete:
+    if delete and target_path.is_dir():
         # Remove stray items
         for entry in target_path.iterdir():
             if entry.name in videos_to_sync or entry.name in assets_to_sync:
                 continue
-            log.info("Removing stray item '%s' in movie folder", entry.name)
-            remove_item(entry)
+            if dry_run:
+                log.info("DELETE %s", entry)
+            else:
+                log.info("Removing stray item '%s' in movie folder", entry.name)
+                remove_item(entry)
             stats.items_removed += 1
 
     # Sync assets folders
     for _, item in assets_to_sync.items():
-        s = process_assets_folder(item[0], item[1], delete=delete, verbose=verbose)
+        s = process_assets_folder(item[0], item[1], delete=delete, verbose=verbose, dry_run=dry_run)
         stats.asset_items_total += s.files_total
         stats.asset_items_linked += s.files_linked
         stats.asset_items_removed += s.items_removed
@@ -458,6 +555,7 @@ def sync(
     source: str,
     target: str,
     *,
+    dry_run: bool = False,
     delete: bool = False,
     create: bool = False,
     verbose: bool = False,
@@ -466,11 +564,14 @@ def sync(
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    source_lib = JellyfinLibrary(pathlib.Path(source).resolve())
-    target_lib = PlexLibrary(pathlib.Path(target).resolve())
+    source_lib = JellyfinLibrary(pathlib.Path(source))
+    target_lib = PlexLibrary(pathlib.Path(target))
 
-    log.info(f"Source library: {source_lib.base_dir}")
-    log.info(f"Target library: {target_lib.base_dir}")
+    if dry_run:
+        log.info("SOURCE %s", source_lib.base_dir)
+        log.info("TARGET %s", target_lib.base_dir)
+    else:
+        log.info("Syncing '%s' to '%s'", source_lib.base_dir, target_lib.base_dir)
 
     if not source_lib.base_dir.is_dir():
         log.error("Source directory '%s' does not exist", source_lib.base_dir)
@@ -486,12 +587,23 @@ def sync(
     stat_movies: int = 0
     stat_items_linked: int = 0
     stat_items_removed: int = 0
+    lib_stats = LibraryStats()
 
-    for src, _, movie in scan_media_library(source_lib, target_lib, delete=delete):
-        s = process_movie(source_lib, target_lib, src, movie, delete=delete, verbose=verbose)
+    for src, _, movie in scan_media_library(source_lib, target_lib, delete=delete, dry_run=dry_run, stats=lib_stats):
+        s = process_movie(
+            source_lib,
+            target_lib,
+            src,
+            movie,
+            delete=delete,
+            verbose=verbose,
+            dry_run=dry_run,
+        )
         stat_movies += 1
         stat_items_linked += s.asset_items_linked + s.videos_linked
         stat_items_removed += s.asset_items_removed + s.items_removed
+
+    stat_items_removed += lib_stats.items_removed
 
     summary = (
         f"Summary: {stat_movies} movies found, "
@@ -507,6 +619,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Create a Plex compatible media library from a Jellyfin library.")
     parser.add_argument("source", help="Jellyfin media library")
     parser.add_argument("target", help="Plex media library")
+    parser.add_argument("--dry-run", action="store_true", help="Show actions only, don't execute them")
     parser.add_argument("--delete", action="store_true", help="Remove stray folders from target library")
     parser.add_argument("--create", action="store_true", help="Create missing target library")
     parser.add_argument("--verbose", action="store_true", help="Show more information messages")
@@ -518,6 +631,7 @@ def main() -> None:
         result = sync(
             args.source,
             args.target,
+            dry_run= args.dry_run,
             delete=args.delete,
             create=args.create,
             verbose=args.verbose,
@@ -547,4 +661,5 @@ if __name__ == "__main__":
     #     "/mnt/media/Plex/Movies",
     #     create=True,
     #     delete=True,
+    #     dry_run=True,
     # )

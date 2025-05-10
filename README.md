@@ -34,6 +34,9 @@ python3 j2p.py [OPTIONS] /path/to/jellyfin/library /path/to/plex/library
 - `--debug`
   Enable debug-level logging for detailed parsing and linking steps.
 
+- `--dry-run`
+  Show what would be done, without performing any actual changes. No files will be created, deleted, or linked.
+
 ## Examples
 
 Mirror a Jellyfin library into an empty Plex structure:
@@ -84,7 +87,9 @@ Each movie must reside in its own folder, with optional subfolders for extras. D
 
 ### Special filename handling
 
-Jellyfin doesn't distinguish between editions and versions (i.e., different resolutions). To work around this, I appended tags like "DVD", "BD", or "4k" to filenames in my library, ensuring the highest quality appears first and is selected by default in Jellyfin. Plex, on the other hand, supports both editions and versions, so these specific tags are converted into Plex versions, while all other suffixes are treated as editions. This is a very personal solution that most users likely won't need — if it doesn't fit your setup, you'll have to adjust the code.
+Jellyfin doesn't distinguish between editions and versions (i.e., different resolutions). To work around this, I appended tags like "DVD", "BD", or "4k" to filenames in my library, ensuring the highest quality appears first and is selected by default in Jellyfin. Plex, on the other hand, supports both editions and versions, so these specific tags are converted into Plex versions, while all other suffixes are treated as editions.
+
+This naming convention is something I came up with for my own library — it's not part of any official Jellyfin standard. If your setup uses a different scheme, you may want to adjust the parsing behavior by switching to a different VariantParser, such as the simpler SimpleVariantParser.
 
 ## License
 
