@@ -54,6 +54,11 @@ class MediaLibrary(ABC):
     def __init__(self, base_dir: pathlib.Path):
         self.base_dir = base_dir.resolve()
 
+    @classmethod
+    @abstractmethod
+    def kind(cls) -> str:
+        ...
+
     @abstractmethod
     def movie_name(self, movie: MovieInfo) -> str:
         ...
@@ -88,7 +93,7 @@ class MediaLibrary(ABC):
 
             yield entry, movie
 
-
+# FIXME: It's not only a parser for variant strings anymore ...
 class VariantParser(ABC):
     def __init__(self, library: MediaLibrary):
         self.library = library
@@ -96,6 +101,11 @@ class VariantParser(ABC):
     @abstractmethod
     def parse(self, variant: str, video: VideoInfo) -> VideoInfo:
         ...
+
+    @abstractmethod
+    def video_name(self, movie_name: str, video: VideoInfo) -> str:
+        ...
+
 
 class SimpleVariantParser(VariantParser):
     def parse(self, variant: str, video: VideoInfo) -> VideoInfo:
@@ -106,12 +116,30 @@ class SimpleVariantParser(VariantParser):
             tags=video.tags,
         )
 
+    def _tags_to_variant(self, video: VideoInfo) -> List[str]:
+        if video.resolution:
+            return [video.resolution]
+        for tag in video.tags or []:
+            if tag.upper() == "DVD":
+                return ["DVD"]
+        return []
+
+    def video_name(self, movie_name: str, video: VideoInfo) -> str:
+        parts = [movie_name]
+        variant_parts = self._tags_to_variant(video)
+        if video.edition:
+            variant_parts.append(video.edition)
+        if variant_parts:
+            parts.append(f"- {' '.join(variant_parts)}")
+        return f"{' '.join(parts)}{video.extension}"
+
+
 @dataclass
 class ResParser:
     pattern: re.Pattern
     mapping: Union[Callable[[re.Match[str]], List[str]], List[str]]
 
-class SninerVariantParser(VariantParser):
+class SninerVariantParser(SimpleVariantParser):
     RES_MAP: List[ResParser] = [
         ResParser(re.compile(r"4k([\.\-]([\w\d]+))?$"), lambda m: ["2160p", m.group(2)] if m.group(1) else ["2160p"]),
         ResParser(re.compile(r"BD([\.\-]([\w\d]+))?$"), lambda m: ["1080p", m.group(2)] if m.group(1) else ["1080p"]),
@@ -158,11 +186,29 @@ class SninerVariantParser(VariantParser):
             tags=tags if tags else None,
         )
 
+    def _tags_to_variant(self, video: VideoInfo) -> List[str]:
+        variant = super()._tags_to_variant(video)
+        if variant:
+            m = re.match(r"(\d{3,4})[pi]$", variant[0], flags=re.IGNORECASE)
+            if m:
+                res = m.group(1)
+                if res == "1080":
+                    return ["BD"]
+                elif res == "2160":
+                    return ["4k"]
+                elif res in ("480", "576"):
+                    return ["DVD"]
+        return variant
+
 
 class JellyfinLibrary(MediaLibrary):
     def __init__(self, base_dir: pathlib.Path, *, variant_parser: Optional[Type[VariantParser]] = None):
         super().__init__(base_dir)
         self.variant_parser = variant_parser(self) if variant_parser else SninerVariantParser(self)
+
+    @classmethod
+    def kind(cls) -> str:
+        return "jellyfin"
 
     def parse_movie_path(self, path: pathlib.Path) -> Optional[MovieInfo]:
         name = path.name
@@ -188,10 +234,10 @@ class JellyfinLibrary(MediaLibrary):
         return " ".join(parts)
 
     def video_name(self, movie: MovieInfo, video: VideoInfo) -> str:
-        parts = [self.movie_name(movie)]
-        if video.edition:
-            parts.append(f"- {video.edition}")
-        return f"{' '.join(parts)}{video.extension}"
+        return self.variant_parser.video_name(
+            self.movie_name(movie),
+            video
+        )
 
     def parse_video_path(self, path: pathlib.Path) -> Optional[VideoInfo]:
         base_name = path.stem
@@ -209,6 +255,10 @@ class JellyfinLibrary(MediaLibrary):
 
 
 class PlexLibrary(MediaLibrary):
+    @classmethod
+    def kind(cls) -> str:
+       return "plex"
+
     def movie_name(self, movie: MovieInfo) -> str:
         parts = [movie.title]
         if movie.year:
@@ -537,7 +587,11 @@ def process_movie(
             if dry_run:
                 log.info("DELETE %s", entry)
             else:
-                log.info("Removing stray item '%s' in movie folder", entry.name)
+                log.info(
+                    "Removing stray item '%s' in movie folder '%s'",
+                    entry.name,
+                    target_path.relative_to(target.base_dir),
+                )
                 remove_item(entry)
             stats.items_removed += 1
 
@@ -551,6 +605,34 @@ def process_movie(
     return stats
 
 
+def determine_library_type(path: pathlib.Path) -> Optional[str]:
+    plex_hints: int = 0
+    jellyfin_hints: int = 0
+    for entry in path.rglob("*.mkv", case_sensitive=False):
+        fname = entry.stem
+        # Check for provider id
+        if re.search(r"\[[a-z]+id-[^\]]+\]", fname, flags=re.IGNORECASE):
+            return JellyfinLibrary.kind()
+        if re.search(r"\{[a-z]+-[^\}]+\}", fname, flags=re.IGNORECASE):
+            return PlexLibrary.kind()
+        # Check for Plex edition
+        if re.search(r"\{edition-[^\}]+\}", fname, flags=re.IGNORECASE):
+            return PlexLibrary.kind()
+        # Check for hints
+        variant = fname.split(" - ")
+        if len(variant) > 1 and re.search(r"\(\d{4}\)", variant[-1]) is None:
+            jellyfin_hints += 1
+        if re.search(r"\[\d{3,4}[pi\]\]", fname, flags=re.IGNORECASE):
+            plex_hints += 1
+        if re.search(r"\[[a-z0-9\.\,]+\]", fname, flags=re.IGNORECASE):
+            plex_hints += 1
+    if plex_hints > jellyfin_hints:
+        return PlexLibrary.kind()
+    elif jellyfin_hints > plex_hints:
+        return JellyfinLibrary.kind()
+    return None
+
+
 def sync(
     source: str,
     target: str,
@@ -560,18 +642,38 @@ def sync(
     create: bool = False,
     verbose: bool = False,
     debug: bool = False,
+    convert_to: Optional[str] = None,
 ) -> int:
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    source_lib = JellyfinLibrary(pathlib.Path(source))
-    target_lib = PlexLibrary(pathlib.Path(target))
+    source_path = pathlib.Path(source)
+    target_path = pathlib.Path(target)
+
+    if not convert_to or convert_to == "auto":
+        source_type = determine_library_type(source_path)
+        if not source_type:
+            log.error("Unable to determine source library type, please provide --convert-to option")
+            return 1
+        target_type = PlexLibrary.kind() if source_type == JellyfinLibrary.kind() else JellyfinLibrary.kind()
+    else:
+        target_type = convert_to
+        source_type = PlexLibrary.kind() if target_type == JellyfinLibrary.kind() else JellyfinLibrary.kind()
+
+    source_lib = (PlexLibrary if source_type == PlexLibrary.kind() else JellyfinLibrary)(source_path)
+    target_lib = (PlexLibrary if target_type == PlexLibrary.kind() else JellyfinLibrary)(target_path)
 
     if dry_run:
         log.info("SOURCE %s", source_lib.base_dir)
         log.info("TARGET %s", target_lib.base_dir)
+        log.info("CONVERTING %s TO %s", source_lib.kind().capitalize(), target_lib.kind().capitalize())
     else:
-        log.info("Syncing '%s' to '%s'", source_lib.base_dir, target_lib.base_dir)
+        log.info("Syncing '%s' (%s) to '%s' (%s)",
+            source_lib.base_dir,
+            source_lib.kind().capitalize(),
+            target_lib.base_dir,
+            target_lib.kind().capitalize(),
+        )
 
     if not source_lib.base_dir.is_dir():
         log.error("Source directory '%s' does not exist", source_lib.base_dir)
@@ -619,6 +721,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Create a Plex compatible media library from a Jellyfin library.")
     parser.add_argument("source", help="Jellyfin media library")
     parser.add_argument("target", help="Plex media library")
+    parser.add_argument("--convert-to", type=str,
+        choices=[JellyfinLibrary.kind(), PlexLibrary.kind(), "auto"], default="auto",
+        help="Type of library to convert to ('auto' will try to determine source library type)")
     parser.add_argument("--dry-run", action="store_true", help="Show actions only, don't execute them")
     parser.add_argument("--delete", action="store_true", help="Remove stray folders from target library")
     parser.add_argument("--create", action="store_true", help="Create missing target library")
@@ -636,6 +741,7 @@ def main() -> None:
             create=args.create,
             verbose=args.verbose,
             debug=args.debug,
+            convert_to=args.convert_to,
         )
     except KeyboardInterrupt:
         log.info("INTERRUPTED")
