@@ -120,8 +120,8 @@ class SimpleVariantParser(VariantParser):
         if video.resolution:
             return [video.resolution]
         for tag in video.tags or []:
-            if tag.upper() == "DVD":
-                return ["DVD"]
+            if tag.upper() in ("DVD", "4k", "BD"):
+                return [tag.upper()]
         return []
 
     def video_name(self, movie_name: str, video: VideoInfo) -> str:
@@ -608,7 +608,9 @@ def process_movie(
 def determine_library_type(path: pathlib.Path) -> Optional[str]:
     plex_hints: int = 0
     jellyfin_hints: int = 0
-    for entry in path.rglob("*.mkv", case_sensitive=False):
+    # FIXME: Unraid has only Python 3.11 and case_sensitive is not available ...
+    for entry in path.rglob("*.mkv"):
+    #for entry in path.rglob("*.mkv", case_sensitive=False):
         fname = entry.stem
         # Check for provider id
         if re.search(r"\[[a-z]+id-[^\]]+\]", fname, flags=re.IGNORECASE):
