@@ -33,7 +33,25 @@ docker run --rm -it -v .:/mnt jellyplex /mnt/DEMO_PLEX_LIBRARY/Movies /mnt/DEMO_
 
 Originally, this script was designed for use in Unraid as a standalone file. That version is still available in the `unraid_user_scripts` branch. On Unraid, the recommended way to run the script is via the Docker image. However, if you prefer to install the Python package locally (not on Unraid), the following examples show how you can use it as a CLI tool.
 
-### Basic Command
+### Docker usage
+
+To use the published container image without installing anything locally:
+
+```bash
+docker run --rm -it -v /your/media:/mnt ghcr.io/sniner/jellyplex-sync:latest /mnt/source /mnt/target
+```
+
+Example using the demo library included in the repo:
+
+```bash
+docker run --rm -it -v .:/mnt ghcr.io/sniner/jellyplex-sync:latest /mnt/DEMO_PLEX_LIBRARY/Movies /mnt/DEMO_PLEX_LIBRARY/Jellyfin
+```
+
+> Note: Make sure to adjust the volume mount (`-v`) so that both source and target paths are accessible inside the container. They must also reside within the same bind mount, otherwise hard links between source and target will not work.
+
+### Python CLI usage
+
+If you install the Python package locally, you can run the tool as follows:
 
 ```bash
 jellyplex-sync [OPTIONS] /path/to/jellyfin/library /path/to/plex/library
@@ -81,11 +99,11 @@ jellyplex-sync --verbose --debug --delete --create ~/Media/Jellyfin ~/Media/Plex
 
 ## Behavior
 
-- **Hard links**: Video files are linked, not copied. This preserves disk space and ensures both libraries reflect the same physical files.
+* **Hard links**: Video files are linked, not copied. This preserves disk space and ensures both libraries reflect the same physical files.
 
-- **Asset folders**: Subdirectories (e.g., `other`, `interviews`) are processed recursively with the same hard-link logic. NB: rename `extras` folder to `other` in your Jellyfin library, because Plex does not recognize `extras`.
+* **Asset folders**: Subdirectories (e.g., `other`, `interviews`) are processed recursively with the same hard-link logic. NB: rename `extras` folder to `other` in your Jellyfin library, because Plex does not recognize `extras`.
 
-- **Stray items**: When `--delete` is used, any unexpected files or folders in the target library will be removed.
+* **Stray items**: When `--delete` is used, any unexpected files or folders in the target library will be removed.
 
 ## Jellyfin movie library outline
 
@@ -109,17 +127,17 @@ Each movie must reside in its own folder, with optional subfolders for extras. D
 
 ### Special filename handling
 
-Jellyfin doesn't distinguish between editions and versions (i.e., different resolutions). To work around this, I appended tags like "DVD", "BD", or "4k" to filenames in my library, ensuring the highest quality appears first and is selected by default in Jellyfin. Plex, on the other hand, supports both editions and versions, so these specific tags are converted into Plex versions, while all other suffixes are treated as editions.
+Jellyfin doesn't distinguish between editions (e.g., Director's Cut) and versions (e.g., 1080p vs. 4K). To work around this, I appended tags like "DVD", "BD", or "4K" to filenames in my personal library, ensuring the highest quality appears first and is selected by default in Jellyfin. Plex, on the other hand, supports editions natively and handles different versions via naming patterns and its internal version management. These specific tags are converted into Plex versions, while all other suffixes are treated as editions.
 
 This naming convention is something I came up with for my personal library — it's not part of any official Jellyfin standard. If your setup uses a different scheme, you may want to adjust the parsing behavior by switching to a different VariantParser, such as the simpler SimpleVariantParser.
 
 ## Plex movie library outline
 
-Plex follows a more structured naming convention than Jellyfin. While Jellyfin typically appends edition or variant information using a ` - ` (space-hyphen-space) pattern, Plex supports additional metadata inside curly braces for editions and square brackets for versions or other details.
+Plex follows a more structured naming convention than Jellyfin. While Jellyfin typically appends edition or variant information using a ` - ` (space-hyphen-space) pattern, Plex supports additional metadata inside **curly braces** for editions and **square brackets** for versions or other details.
 
 Unlike Jellyfin, Plex’s naming system allows you to embed extra tags such as release source (`[BluRay]`), quality (`[4K]`), or codec (`[HEVC]`) directly in the filename. These tags are ignored by the default Plex scanners during media recognition, but remain visible in the interface — which makes them useful for organizing your collection without affecting playback or matching.
 
-Note: This behavior applies to Plex's default scanner. If you use custom scanners or agents, they may treat these tags differently.
+> Note: This behavior applies to Plex's default scanner. If you use custom scanners or agents, they may treat these tags differently.
 
 I originally started with a Jellyfin-style library and converted it to be Plex-compatible. Over time, I came to prefer Plex's more expressive naming conventions and switched my personal collection to follow the Plex format. I now use Jellyfin mainly as a fallback for long-term archival and offline use.
 
