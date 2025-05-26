@@ -49,6 +49,16 @@ docker run --rm -it -v .:/mnt ghcr.io/sniner/jellyplex-sync:latest /mnt/DEMO_PLE
 
 > Note: Make sure to adjust the volume mount (`-v`) so that both source and target paths are accessible inside the container. They must also reside within the same bind mount, otherwise hard links between source and target will not work.
 
+### Media server integration
+
+If you're using Unraid, you can add the included `jellyplex-sync.sh` script to the User Scripts plugin as a new custom script. This helper script pulls the latest container image (`ghcr.io/sniner/jellyplex-sync:latest`), removes any outdated images, and then runs the main sync operation.
+
+At the very bottom of the script, you'll find the actual command that runs the container. Make sure to adjust the source and target paths to match your own media library structure.
+
+> ⚠️ Important: The script runs in `--dry-run` mode by default. This means it won't make any changes yet — it will only show what would happen. Once you're confident everything is working as expected, you can remove the `--dry-run` flag to perform real changes.
+
+Although tailored for Unraid, this script can also be used on other NAS systems or Linux servers — simply schedule it as a cronjob to automate regular syncs. Docker must be installed for the script to work, as it relies on the containerized version of the tool.
+
 ### Python CLI usage
 
 If you install the Python package locally, you can run the tool as follows:
