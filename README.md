@@ -1,18 +1,22 @@
 # Jellyfin-to-Plex Media Library Sync
 
-This small helper script takes your curated Jellyfin media library and creates a Plex-compatible version without duplicating files. I prefer Plex for consumption, so this tool mirrors the existing collection in a format that Plex can easily index.
+This small helper script takes your curated media library in Jellyfin or Plex format and creates a compatible mirror for the other system, without duplicating any files. I personally prefer Plex for playback, so the tool initially focused on converting from Jellyfin to Plex, but it now supports both directions.
 
-> **Warning:** This script will **overwrite the entire target directory**. Do not store or edit anything manually in the Plex library path. The Jellyfin library is treated as the **only source of truth**, and any unmatched content in the Plex folder may be deleted without warning.
+> **Warning:** This script will **overwrite the entire target directory**. Do not store or edit anything manually in the target library path. The source library is treated as the **only source of truth**, and any unmatched content in the target folder may be deleted without warning.
 
-> **Note:** This tool is only useful if your Jellyfin library is well-maintained and each movie resides in its own folder.
+> **Note:** This tool is only useful if your media library is well-maintained and each movie resides in its own folder.
 
 ## Overview
 
-The script scans the source Jellyfin library, parses each movie folder for metadata (title, year, optional provider ID), and reproduces the same directory structure in the target location. Rather than copying video files, it creates hard links to avoid extra storage usage. Asset folders (e.g., `extras`, `subtitles`) are also mirrored. With `--delete`, any files or folders in the target that are no longer present in the source will be removed.
+The script scans the source library, parses each movie folder for metadata (title, year, optional provider ID), and reproduces the same directory structure in the target location. Rather than copying video files, it creates hard links to avoid extra storage usage. Asset folders (e.g., `extras`, `subtitles`) are also mirrored. With `--delete`, any files or folders in the target that are no longer present in the source will be removed.
 
 > ⚠️ **Important:** This script is designed exclusively for **movie libraries**. It does **not** support TV shows or miniseries. However, this is usually not a limitation in practice: for shows, Jellyfin and Plex use very similar directory structures, so you can typically point both apps to the same library without issues.
 
 ## Usage
+
+This script is intended to be used as a user script in Unraid, which is why it's written as a single long source file. To run it in Unraid, the Python plugin must be installed. At the end of the file, you'll need to uncomment the call to main() and adjust the call to the sync() function to match your environment.
+
+Below are a few examples of how to use it as a CLI tool.
 
 ### Basic Command
 
@@ -36,6 +40,9 @@ python3 j2p.py [OPTIONS] /path/to/jellyfin/library /path/to/plex/library
 
 - `--dry-run`
   Show what would be done, without performing any actual changes. No files will be created, deleted, or linked.
+
+- `--convert-to=...`
+  Choose between `jellyfin`, `plex` or `auto` (which is the default): `jellyfin` assumes the source library is in Plex format and creates a Jellyfin-compatible mirror. `plex` does the opposite. And `auto` inspects the source library and selects the appropriate conversion automatically.
 
 ## Examples
 
@@ -90,6 +97,28 @@ Each movie must reside in its own folder, with optional subfolders for extras. D
 Jellyfin doesn't distinguish between editions and versions (i.e., different resolutions). To work around this, I appended tags like "DVD", "BD", or "4k" to filenames in my library, ensuring the highest quality appears first and is selected by default in Jellyfin. Plex, on the other hand, supports both editions and versions, so these specific tags are converted into Plex versions, while all other suffixes are treated as editions.
 
 This naming convention is something I came up with for my own library — it's not part of any official Jellyfin standard. If your setup uses a different scheme, you may want to adjust the parsing behavior by switching to a different VariantParser, such as the simpler SimpleVariantParser.
+
+## Plex movie library outline
+
+Plex follows a more structured naming convention than Jellyfin. While Jellyfin typically appends edition or variant info after a `<space><hyphen><space>` sequence, Plex allows additional metadata to be embedded in square brackets — these are ignored by the scanner but remain visible to the user. This makes it easy to include tags like source or other details directly in the filename without affecting media recognition.
+
+I originally started with a Jellyfin-style library and converted it to be Plex-compatible. Over time, I came to prefer Plex’s naming conventions, so I’ve since switched my personal collection to follow the Plex format, using Jellyfin mainly as a fallback for long-term archival.
+
+This is the expected folder structure in Plex format (with some demo tags):
+
+```
+Movies
+├── A Bridge Too Far (1977) {imdb-tt0075784}
+│   ├── A Bridge Too Far (1977) {imdb-tt0075784}.mkv
+│   └── trailers
+│       └── A Bridge Too Far.mkv
+└── Das Boot (1981) {imdb-tt0082096}
+    ├── Das Boot (1981) {imdb-tt0082096} {edition-Director's Cut} [1080p].mkv
+    ├── Das Boot (1981) {imdb-tt0082096} {edition-Theatrical Cut} [1080p][remux].mkv
+    └── other
+        ├── Production Photos.mkv
+        └── Making of.mkv
+```
 
 ## License
 
