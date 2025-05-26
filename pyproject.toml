@@ -1,9 +1,9 @@
 [project]
-name = "jellyplex_sync"
-version = "0.1.0"
+name = "jellyplex-sync"
+version = "0.1.1"
 description = "Convert your media library between Jellyfin and Plex formats by creating a hard-linked mirror"
 readme = "README.md"
-authors = [{name="Stefan Schönberger", email="mail@sniner.dev"}]
+authors = [{ name = "Stefan Schönberger", email = "mail@sniner.dev" }]
 requires-python = ">=3.12"
 dependencies = []
 
@@ -12,6 +12,15 @@ packages = [{ include = "jellyplex", from = "src" }]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.5"
+
+[tool.pytest.ini_options]
+addopts = "-ra -q"
+testpaths = ["tests"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+disableBytesTypePromotions = true
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

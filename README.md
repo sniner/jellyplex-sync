@@ -19,7 +19,7 @@ The script scans the source library, parses each movie folder for metadata (titl
 If you build the docker image locally:
 
 ```bash
-cd .../jellyplex_sync
+cd .../jellyplex-sync
 docker build -t jellyplex .
 ```
 
