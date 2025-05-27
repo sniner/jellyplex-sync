@@ -4,8 +4,8 @@ import pytest
 import jellyplex as jp
 
 @pytest.fixture
-def jlib() -> jp.MediaLibrary:
-    return jp.JellyfinLibrary(Path("."))
+def plib() -> jp.MediaLibrary:
+    return jp.PlexLibrary(Path("."))
 
 
 SANE_SAMPLES = [
@@ -28,7 +28,7 @@ SANE_SAMPLES = [
         )
     ),
     (
-        Path("First movie (1970) [imdbid-tt123456]"),
+        Path("First movie (1970) {imdb-tt123456}"),
         jp.MovieInfo(
             title="First movie",
             provider="imdb",
@@ -37,7 +37,7 @@ SANE_SAMPLES = [
         )
     ),
     (
-        Path("First movie [imdbid-tt123456]"),
+        Path("First movie {imdb-tt123456}"),
         jp.MovieInfo(
             title="First movie",
             provider="imdb",
@@ -46,7 +46,7 @@ SANE_SAMPLES = [
         )
     ),
     (
-        Path("Series – A movie (1984) [imdbid-tt654321]"),
+        Path("Series – A movie (1984) {imdb-tt654321}"),
         jp.MovieInfo(
             title="Series – A movie",
             provider="imdb",
@@ -54,9 +54,6 @@ SANE_SAMPLES = [
             year="1984",
         )
     ),
-]
-
-NOT_RECOMMENDED_SAMPLES = [
     (
         # Hyphen in title string
         Path("Series - A movie (1984)"),
@@ -67,14 +64,17 @@ NOT_RECOMMENDED_SAMPLES = [
             year="1984",
         )
     ),
+]
+
+NOT_RECOMMENDED_SAMPLES = [
     (
-        # Hyphen in title string (with metadata id)
-        Path("Series - A movie (1984) - [imdbid-tt654321]"),
+        # Tags in movie folder name (unsure if Plex would accept this)
+        Path("First movie {imdb-tt123456} [tag1][tag2]"),
         jp.MovieInfo(
-            title="Series - A movie",
+            title="First movie",
             provider="imdb",
-            movie_id="tt654321",
-            year="1984",
+            movie_id="tt123456",
+            year=None,
         )
     ),
 ]
@@ -92,48 +92,58 @@ NOT_WORKING_SAMPLES = [
     ),
     (
         # Missing spaces
-        Path("New movie (1998)-[imdbid-tt654321]"),
+        Path("New movie(1998){imdb-tt654321}"),
         jp.MovieInfo(
-            title="New movie (1998)-[imdbid-tt654321]",
-            provider=None,
-            movie_id=None,
+            title="New movie(1998)",
+            provider="imdb",
+            movie_id="tt654321",
             year=None,
         )
     ),
     (
-        # Fields mixed up
-        Path("New movie [imdbid-tt654321] (1998)"),
+        # Jellyfin syntax (but still valid Plex syntax)
+        Path("New movie (1998) [imdbid-tt654321]"),
         jp.MovieInfo(
-            title="New movie [imdbid-tt654321]",
+            title="New movie",
             provider=None,
             movie_id=None,
             year="1998",
         )
     ),
     (
-        # Unrecognized metadata provider
-        Path("New movie (1998) - [youtube-y12345678]"),
+        # Fields are mixed up (don't think Plex will grok this)
+        Path("New movie {imdb-tt654321} (1998)"),
         jp.MovieInfo(
-            title="New movie (1998) - [youtube-y12345678]",
+            title="New movie",
+            provider="imdb",
+            movie_id="tt654321",
+            year="1998",
+        )
+    ),
+    (
+        # Unrecognized metadata provider
+        Path("New movie (1998) {youtube-y12345678}"),
+        jp.MovieInfo(
+            title="New movie",
             provider=None,
             movie_id=None,
-            year=None,
+            year="1998",
         )
     ),
     (Path(""), None),
 ]
 
 @pytest.mark.parametrize("path,expected", SANE_SAMPLES, ids=[str(p) for p, _ in SANE_SAMPLES])
-def test_parse_sane_jellyfin_movie_path(jlib, path, expected):
-    result = jlib.parse_movie_path(path)
+def test_parse_sane_plex_movie_path(plib, path, expected):
+    result = plib.parse_movie_path(path)
     assert result == expected, f"Failed on path: {path}"
 
 @pytest.mark.parametrize("path,expected", NOT_RECOMMENDED_SAMPLES, ids=[str(p) for p, _ in NOT_RECOMMENDED_SAMPLES])
-def test_parse_not_recommended_jellyfin_movie_path(jlib, path, expected):
-    result = jlib.parse_movie_path(path)
+def test_parse_not_recommended_plex_movie_path(plib, path, expected):
+    result = plib.parse_movie_path(path)
     assert result == expected, f"Failed on path: {path}"
 
 @pytest.mark.parametrize("path,expected", NOT_WORKING_SAMPLES, ids=[str(p) for p, _ in NOT_WORKING_SAMPLES])
-def test_parse_bad_jellyfin_movie_path(jlib, path, expected):
-    result = jlib.parse_movie_path(path)
+def test_parse_bad_plex_movie_path(plib, path, expected):
+    result = plib.parse_movie_path(path)
     assert result == expected, f"Failed on path: {path}"

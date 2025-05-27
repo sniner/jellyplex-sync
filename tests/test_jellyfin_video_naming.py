@@ -59,7 +59,7 @@ SANE_SAMPLES = [
         jp.VideoInfo(
             extension=".mkv",
             edition="Director's Cut",
-            resolution="",  # FIXME: Should be None
+            resolution=None,
             tags={"DVD",},
         )
     ),
@@ -76,6 +76,7 @@ SANE_SAMPLES = [
 
 NOT_RECOMMENDED_SAMPLES = [
     (
+        # <space><hypen><space> in front of metadata block
         Path("Series – A movie (1984) - [imdbid-tt654321].mkv"),
         jp.VideoInfo(
             extension=".mkv",
@@ -85,7 +86,18 @@ NOT_RECOMMENDED_SAMPLES = [
         )
     ),
     (
-        Path("Series – A movie (1984) [imdbid-tt654321] - Director's Cut BD.mkv"),
+        # Multiple <space><hypen><space> sequences
+        Path("Series - A movie (1984) - [imdbid-tt654321] - Director's Cut.mkv"),
+        jp.VideoInfo(
+            extension=".mkv",
+            edition="Director's Cut",
+            resolution=None,
+            tags=None,
+        )
+    ),
+    (
+        # Resolution ('BD') at the end of variant/edition string
+        Path("A movie (1984) [imdbid-tt654321] - Director's Cut BD.mkv"),
         jp.VideoInfo(
             extension=".mkv",
             edition="Director's Cut",
@@ -95,9 +107,18 @@ NOT_RECOMMENDED_SAMPLES = [
     ),
 ]
 
-BAD_SAMPLES = [
+NOT_WORKING_SAMPLES = [
     (
         Path(""),
+        jp.VideoInfo(
+            extension="",
+            edition=None,
+            resolution=None,
+            tags=None,
+        )
+    ),
+    (
+        Path(".mkv"),
         jp.VideoInfo(
             extension="",
             edition=None,
@@ -113,11 +134,11 @@ def test_parse_sane_jellyfin_video_path(jlib: jp.MediaLibrary, path, expected):
     assert result == expected, f"Failed on path: {path}"
 
 @pytest.mark.parametrize("path,expected", NOT_RECOMMENDED_SAMPLES, ids=[str(p) for p, _ in NOT_RECOMMENDED_SAMPLES])
-def test_parse_not_recommended_jellyfin_vide_path(jlib, path, expected):
+def test_parse_not_recommended_jellyfin_video_path(jlib, path, expected):
     result = jlib.parse_video_path(path)
     assert result == expected, f"Failed on path: {path}"
 
-@pytest.mark.parametrize("path,expected", BAD_SAMPLES, ids=[str(p) for p, _ in BAD_SAMPLES])
+@pytest.mark.parametrize("path,expected", NOT_WORKING_SAMPLES, ids=[str(p) for p, _ in NOT_WORKING_SAMPLES])
 def test_parse_bad_jellyfin_video_path(jlib, path, expected):
     result = jlib.parse_video_path(path)
     assert result == expected, f"Failed on path: {path}"

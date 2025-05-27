@@ -1,6 +1,6 @@
 [project]
 name = "jellyplex-sync"
-version = "0.1.1"
+version = "0.1.2"
 description = "Convert your media library between Jellyfin and Plex formats by creating a hard-linked mirror"
 readme = "README.md"
 authors = [{ name = "Stefan Schönberger", email = "mail@sniner.dev" }]

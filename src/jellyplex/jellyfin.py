@@ -73,18 +73,18 @@ class SimpleVariantParser(VariantParser):
 @dataclass
 class ResParser:
     pattern: re.Pattern
-    mapping: Union[Callable[[re.Match[str]], List[str]], List[str]]
+    mapping: Union[Callable[[re.Match[str]], List[Union[str, None]]], List[Union[str, None]]]
 
 class SninerVariantParser(SimpleVariantParser):
     RES_MAP: List[ResParser] = [
         ResParser(re.compile(r"4k([\.\-]([\w\d]+))?$"), lambda m: ["2160p", m.group(2)] if m.group(1) else ["2160p"]),
         ResParser(re.compile(r"BD([\.\-]([\w\d]+))?$"), lambda m: ["1080p", m.group(2)] if m.group(1) else ["1080p"]),
-        ResParser(re.compile(r"DVD([\.\-]([\w\d]+))?$"), lambda m: ["", "DVD", m.group(2)] if m.group(1) else ["", "DVD"]),
+        ResParser(re.compile(r"DVD([\.\-]([\w\d]+))?$"), lambda m: [None, "DVD", m.group(2)] if m.group(1) else [None, "DVD"]),
         ResParser(RESOLUTION_PATTERN, lambda m: [m.group(0)]),
     ]
 
     def _match_resolution(self, word: str) -> Tuple[Optional[str], Set[str]]:
-        tags: List[str] = []
+        tags: List[Union[str, None]] = []
         for mapper in self.RES_MAP:
             match = mapper.pattern.match(word)
             if match:
@@ -94,7 +94,7 @@ class SninerVariantParser(SimpleVariantParser):
                     tags = mapper.mapping
                 break
 
-        return tags[0] if tags else None, set(tags[1:])
+        return tags[0] if tags else None, set(t for t in tags[1:] if t)
 
     def parse(self, variant: str, video: VideoInfo) -> VideoInfo:
         edition: Optional[str] = None

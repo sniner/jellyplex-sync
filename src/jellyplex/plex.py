@@ -88,12 +88,15 @@ class PlexLibrary(MediaLibrary):
             title = leftover
             year = None
 
-        return MovieInfo(
-            title=title,
-            year=year,
-            provider=provider,
-            movie_id=movie_id
-        )
+        if title:
+            return MovieInfo(
+                title=title,
+                year=year,
+                provider=provider,
+                movie_id=movie_id
+            )
+        else:
+            return None
 
     def parse_video_path(self, path: pathlib.Path) -> Optional[VideoInfo]:
         name = path.stem
