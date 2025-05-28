@@ -82,6 +82,14 @@ SAMPLES_FILENAME = [
         "Das Boot (1981) [imdbid-tt0082096] - Theatrical Cut DVD.mkv",
         "Das Boot (1981) {imdb-tt0082096} {edition-Theatrical Cut} [DVD].mkv",
     ),
+    (
+        "Das Boot (1981) [imdbid-tt0082096] - 720p Theatrical Cut.mkv",
+        "Das Boot (1981) {imdb-tt0082096} {edition-Theatrical Cut} [720p].mkv",
+    ),
+    (
+        "Das Boot (1981) [imdbid-tt0082096] - Theatrical Cut 720p.mkv",
+        "Das Boot (1981) {imdb-tt0082096} {edition-Theatrical Cut} [720p].mkv",
+    ),
 ]
 
 
@@ -106,7 +114,7 @@ def test_jellyfin_to_plex_full(jlib: jp.JellyfinLibrary, plib: jp.PlexLibrary, p
 def test_jellyfin_to_plex_short(jlib: jp.JellyfinLibrary, plib: jp.PlexLibrary, path, expected):
     source_path = Path(jlib.base_dir, path)
 
-    # Cheap trick: Fake a movie path
+    # Cheap trick: Fake the movie path
     movie = jlib.parse_movie_path(Path(jlib.base_dir, source_path.stem))
     assert movie is not None
 

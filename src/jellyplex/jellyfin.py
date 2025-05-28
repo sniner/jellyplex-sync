@@ -143,7 +143,7 @@ class JellyfinLibrary(MediaLibrary):
         self.variant_parser = variant_parser(self) if variant_parser else SninerVariantParser(self)
 
     @classmethod
-    def kind(cls) -> str:
+    def shortname(cls) -> str:
         return "jellyfin"
 
     def parse_movie_path(self, path: pathlib.Path) -> Optional[MovieInfo]:

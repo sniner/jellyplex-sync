@@ -38,7 +38,7 @@ class MediaLibrary(ABC):
 
     @classmethod
     @abstractmethod
-    def kind(cls) -> str:
+    def shortname(cls) -> str:
         ...
 
     @abstractmethod

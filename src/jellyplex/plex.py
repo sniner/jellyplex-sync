@@ -26,7 +26,7 @@ PLEX_METADATA_PROVIDER = {"imdb", "tmdb", "tvdb"}
 
 class PlexLibrary(MediaLibrary):
     @classmethod
-    def kind(cls) -> str:
+    def shortname(cls) -> str:
        return "plex"
 
     def movie_name(self, movie: MovieInfo) -> str:

@@ -1,6 +1,6 @@
-# Jellyfin-to-Plex Media Library Sync
+# Bidirectional Movie Library Sync for Plex and Jellyfin
 
-This small helper script takes your curated media library in Jellyfin or Plex format and creates a compatible mirror for the other system, without duplicating any files. I personally prefer Plex for playback, so the tool initially focused on converting from Jellyfin to Plex, but it now supports both directions.
+Can't decide between Jellyfin and Plex? This tool might help. It synchronizes your **movie library** between Jellyfin and Plex formats in **both directions** — without duplicating any files. Instead, it uses **hardlinks** to mirror your collection efficiently, saving storage while keeping both libraries in sync.
 
 > **Warning:** This script will **overwrite the entire target directory**. Do not store or edit anything manually in the target library path. The source library is treated as the **only source of truth**, and any unmatched content in the target folder may be deleted without warning.
 
@@ -16,7 +16,7 @@ The script scans the source library, parses each movie folder for metadata (titl
 
 ## Docker Image
 
-If you build the docker image locally:
+If you want to build the docker image locally:
 
 ```bash
 cd .../jellyplex-sync
@@ -31,7 +31,7 @@ docker run --rm -it -v .:/mnt jellyplex /mnt/DEMO_PLEX_LIBRARY/Movies /mnt/DEMO_
 
 ## Usage
 
-Originally, this script was designed for use in Unraid as a standalone file. That version is still available in the `unraid_user_scripts` branch. On Unraid, the recommended way to run the script is via the Docker image. However, if you prefer to install the Python package locally (not on Unraid), the following examples show how you can use it as a CLI tool.
+Originally, this script was designed for use in Unraid as a standalone file. That version is still available in the `unraid_user_scripts` branch. On Unraid, the recommended way to run the script is via the Docker image. However, if you prefer to install the Python package locally (i.e. not on Unraid), the following examples show how you can use it as a CLI tool.
 
 ### Docker usage
 
@@ -57,7 +57,7 @@ At the very bottom of the script, you'll find the actual command that runs the c
 
 > ⚠️ Important: The script runs in `--dry-run` mode by default. This means it won't make any changes yet — it will only show what would happen. Once you're confident everything is working as expected, you can remove the `--dry-run` flag to perform real changes.
 
-Although tailored for Unraid, this script can also be used on other NAS systems or Linux servers — simply schedule it as a cronjob to automate regular syncs. Docker must be installed for the script to work, as it relies on the containerized version of the tool.
+Although tailored for Unraid, this script can also be used on other NAS systems or Linux servers — simply schedule it as a cronjob to automate regular syncs or run it manually on demand. Docker must be installed for the script to work, as it relies on the containerized version of the tool.
 
 ### Python CLI usage
 

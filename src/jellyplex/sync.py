@@ -317,8 +317,8 @@ def sync(
             log.error("Unable to determine source library type, please provide --convert-to option")
             return 1
         target_type = PlexLibrary if source_type == JellyfinLibrary else JellyfinLibrary
-    elif convert_to in (JellyfinLibrary.kind(), PlexLibrary.kind()):
-        target_type = PlexLibrary if convert_to == PlexLibrary.kind() else JellyfinLibrary
+    elif convert_to in (JellyfinLibrary.shortname(), PlexLibrary.shortname()):
+        target_type = PlexLibrary if convert_to == PlexLibrary.shortname() else JellyfinLibrary
         source_type = PlexLibrary if target_type == JellyfinLibrary else JellyfinLibrary
     else:
         raise ValueError("Unknown value for parameter 'convert_to'")
@@ -329,13 +329,13 @@ def sync(
     if dry_run:
         log.info("SOURCE %s", source_lib.base_dir)
         log.info("TARGET %s", target_lib.base_dir)
-        log.info("CONVERTING %s TO %s", source_lib.kind().capitalize(), target_lib.kind().capitalize())
+        log.info("CONVERTING %s TO %s", source_lib.shortname().capitalize(), target_lib.shortname().capitalize())
     else:
         log.info("Syncing '%s' (%s) to '%s' (%s)",
             source_lib.base_dir,
-            source_lib.kind().capitalize(),
+            source_lib.shortname().capitalize(),
             target_lib.base_dir,
-            target_lib.kind().capitalize(),
+            target_lib.shortname().capitalize(),
         )
 
     if not source_lib.base_dir.is_dir():

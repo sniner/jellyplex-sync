@@ -13,7 +13,7 @@ def main() -> None:
     parser.add_argument("source", help="Jellyfin media library")
     parser.add_argument("target", help="Plex media library")
     parser.add_argument("--convert-to", type=str,
-        choices=[jp.JellyfinLibrary.kind(), jp.PlexLibrary.kind(), "auto"], default="auto",
+        choices=[jp.JellyfinLibrary.shortname(), jp.PlexLibrary.shortname(), "auto"], default="auto",
         help="Type of library to convert to ('auto' will try to determine source library type)")
     parser.add_argument("--dry-run", action="store_true", help="Show actions only, don't execute them")
     parser.add_argument("--delete", action="store_true", help="Remove stray folders from target library")

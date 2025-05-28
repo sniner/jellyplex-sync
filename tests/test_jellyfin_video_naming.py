@@ -72,6 +72,15 @@ SANE_SAMPLES = [
             tags=None,
         )
     ),
+    (
+        Path("Series – A movie (1984) [imdbid-tt654321] - 1080p Director's Cut.mkv"),
+        jp.VideoInfo(
+            extension=".mkv",
+            edition="Director's Cut",
+            resolution="1080p",
+            tags=None,
+        )
+    ),
 ]
 
 NOT_RECOMMENDED_SAMPLES = [
@@ -98,6 +107,16 @@ NOT_RECOMMENDED_SAMPLES = [
     (
         # Resolution ('BD') at the end of variant/edition string
         Path("A movie (1984) [imdbid-tt654321] - Director's Cut BD.mkv"),
+        jp.VideoInfo(
+            extension=".mkv",
+            edition="Director's Cut",
+            resolution="1080p",
+            tags=None,
+        )
+    ),
+    (
+        # Resolution ('1080p') at the end of variant/edition string
+        Path("A movie (1984) [imdbid-tt654321] - Director's Cut 1080p.mkv"),
         jp.VideoInfo(
             extension=".mkv",
             edition="Director's Cut",
