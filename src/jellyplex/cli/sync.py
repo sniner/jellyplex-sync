@@ -46,7 +46,7 @@ def main() -> None:
     except Exception as exc:
         logging.error("Exception: %s", exc)
         result = 99
-    exit(result)
+    sys.exit(result)
 
 
 if __name__ == "__main__":
