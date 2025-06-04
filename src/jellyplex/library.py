@@ -1,7 +1,6 @@
 import logging
 import pathlib
 import re
-import shutil
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Generator, Optional, Set, Tuple
