@@ -283,7 +283,7 @@ def determine_library_type(path: pathlib.Path) -> Optional[Type[MediaLibrary]]:
         variant = fname.split(" - ")
         if len(variant) > 1 and re.search(r"\(\d{4}\)", variant[-1]) is None:
             jellyfin_hints += 1
-        if re.search(r"\[\d{3,4}[pi\]\]", fname, flags=re.IGNORECASE):
+        if re.search(r"\[\d{3,4}[pi]\]", fname, flags=re.IGNORECASE):
             plex_hints += 1
         if re.search(r"\[[a-z0-9\.\,]+\]", fname, flags=re.IGNORECASE):
             plex_hints += 1
