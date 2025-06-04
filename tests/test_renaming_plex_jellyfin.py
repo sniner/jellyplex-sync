@@ -2,7 +2,6 @@ from pathlib import Path
 import pytest
 
 import jellyplex as jp
-from jellyplex.library import MovieInfo, VideoInfo
 
 @pytest.fixture
 def jlib() -> jp.JellyfinLibrary:
