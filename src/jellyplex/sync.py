@@ -16,6 +16,7 @@ from .jellyfin import (
 from .plex import (
     PlexLibrary,
 )
+import glob as pyglob
 from . import utils
 
 log = logging.getLogger(__name__)
@@ -201,6 +202,33 @@ def process_movie(
                 return MovieStats()
             videos_to_sync[video_name] = (entry, video_path)
             stats.videos_total += 1
+
+            # Find associated files
+            base_stem = entry.stem
+            target_stem = video_path.stem
+            # Use glob.escape because filename may contain brackets which are special chars in glob
+            for associated_entry in source_path.glob(f"{pyglob.escape(base_stem)}.*"):
+                if associated_entry == entry:
+                    continue
+                # Associated extensions we want to sync
+                if associated_entry.suffix.lower() not in {
+                    ".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".edl", ".nfo"
+                }:
+                    continue
+
+                # Construct target name: replace base_stem with target_stem
+                # Example: Movie.mkv -> Movie.en.srt
+                # Target:  Movie-Edition.mkv -> Movie-Edition.en.srt
+                suffix_part = associated_entry.name[len(base_stem):]
+                target_associated_name = f"{target_stem}{suffix_part}"
+                target_associated_path = target_path / target_associated_name
+
+                if target_associated_name in assets_to_sync:
+                    # Should not happen usually given unique mapping
+                    continue
+
+                assets_to_sync[target_associated_name] = (associated_entry, target_associated_path)
+
         elif entry.is_dir():
             dir_name = entry.name
             # TODO: Just a quick fix for selecting and manipulating directories
@@ -251,12 +279,33 @@ def process_movie(
                 utils.remove(entry)
             stats.items_removed += 1
 
-    # Sync assets folders
+    # Sync assets folders and associated files
     for _, item in assets_to_sync.items():
-        s = process_assets_folder(item[0], item[1], delete=delete, verbose=verbose, dry_run=dry_run)
-        stats.asset_items_total += s.files_total
-        stats.asset_items_linked += s.files_linked
-        stats.asset_items_removed += s.items_removed
+        if item[0].is_dir():
+            s = process_assets_folder(item[0], item[1], delete=delete, verbose=verbose, dry_run=dry_run)
+            stats.asset_items_total += s.files_total
+            stats.asset_items_linked += s.files_linked
+            stats.asset_items_removed += s.items_removed
+        elif item[0].is_file():
+            # Handle associated files
+            if item[1].exists():
+                if item[1].samefile(item[0]):
+                    if verbose:
+                        log.debug("Target asset file '%s' already exists, skipping", item[1].name)
+                else:
+                    if dry_run:
+                        log.info("RELINK %s", item[0])
+                    else:
+                        item[1].unlink()
+                        item[1].hardlink_to(item[0])
+                    stats.asset_items_linked += 1
+            else:
+                if dry_run:
+                    log.info("LINK   %s", item[1])
+                else:
+                    item[1].hardlink_to(item[0])
+                stats.asset_items_linked += 1
+            stats.asset_items_total += 1
 
     return stats
 
