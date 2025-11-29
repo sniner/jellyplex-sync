@@ -9,7 +9,7 @@ from typing import Generator, Optional, Set, Tuple
 log = logging.getLogger(__name__)
 
 
-ACCEPTED_VIDEO_SUFFIXES = {".mkv", ".m4v"}
+ACCEPTED_VIDEO_SUFFIXES = {".mkv", ".m4v", ".mp4", ".avi", ".mov", ".wmv", ".ts", ".webm"}
 RESOLUTION_PATTERN = re.compile(r"\d{3,4}[pi]$")
 
 
