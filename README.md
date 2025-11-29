@@ -38,13 +38,13 @@ Originally, this script was designed for use in Unraid as a standalone file. Tha
 To use the published container image without installing anything locally:
 
 ```bash
-docker run --rm -it -v /your/media:/mnt ghcr.io/sniner/jellyplex-sync:latest /mnt/source /mnt/target
+docker run --rm -it -v /your/media:/mnt ghcr.io/plex-migration-homelab/jellyplex-sync:latest /mnt/source /mnt/target
 ```
 
 Example using the demo library included in the repo:
 
 ```bash
-docker run --rm -it -v .:/mnt ghcr.io/sniner/jellyplex-sync:latest /mnt/DEMO_PLEX_LIBRARY/Movies /mnt/DEMO_PLEX_LIBRARY/Jellyfin
+docker run --rm -it -v .:/mnt ghcr.io/plex-migration-homelab/jellyplex-sync:latest /mnt/DEMO_PLEX_LIBRARY/Movies /mnt/DEMO_PLEX_LIBRARY/Jellyfin
 ```
 
 > Note: Make sure to adjust the volume mount (`-v`) so that both source and target paths are accessible inside the container. They must also reside within the same bind mount, otherwise hard links between source and target will not work.
