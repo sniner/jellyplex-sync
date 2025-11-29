@@ -1,6 +1,6 @@
 #!/bin/bash
 
-IMAGE="ghcr.io/sniner/jellyplex-sync"
+IMAGE="ghcr.io/plex-migration-homelab/jellyplex-sync"
 VERSION="latest"
 
 # Pull the latest version of the image from the registry
