@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Dict, Generator, List, Optional, Set, Tuple, Type
 
 from .library import (
+    ACCEPTED_ASSOCIATED_SUFFIXES,
     ACCEPTED_VIDEO_SUFFIXES,
     MovieInfo,
     VideoInfo,
@@ -212,9 +213,7 @@ def process_movie(
                 if associated_entry == entry:
                     continue
                 # Associated extensions we want to sync
-                if associated_entry.suffix.lower() not in {
-                    ".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".edl", ".nfo"
-                }:
+                if associated_entry.suffix.lower() not in ACCEPTED_ASSOCIATED_SUFFIXES:
                     continue
 
                 # Construct target name: replace base_stem with target_stem
@@ -306,13 +305,11 @@ def process_movie(
                         stale_stem = stale_candidate.stem
                         target_stem = item[1].stem
                         for assoc_file in item[1].parent.iterdir():
-                            if assoc_file == item[1]:
+                            if assoc_file == stale_candidate or assoc_file == item[1]:
                                 continue
                             if not assoc_file.is_file():
                                 continue
-                            if assoc_file.suffix.lower() not in {
-                                ".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".edl", ".nfo"
-                            }:
+                            if assoc_file.suffix.lower() not in ACCEPTED_ASSOCIATED_SUFFIXES:
                                 continue
 
                             # Match by stem prefix
@@ -331,11 +328,8 @@ def process_movie(
                                         log.warning("Failed to rename associated file '%s': %s", assoc_file.name, e)
 
                         # Remove from inode map to avoid processing again
-                        try:
-                            if source_inode in existing_inodes:
-                                del existing_inodes[source_inode]
-                        except Exception:
-                            pass
+                        if source_inode in existing_inodes:
+                            del existing_inodes[source_inode]
                         continue
                     else:
                         log.warning("Stale hardlink '%s' should be '%s'. Use --update-filenames to fix.", stale_candidate.name, item[1].name)
