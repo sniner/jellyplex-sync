@@ -29,6 +29,7 @@ class VideoInfo:
     edition: Optional[str] = None
     resolution: Optional[str] = None
     tags: Optional[Set[str]] = None
+    providers: Optional[Set[str]] = None
 
 
 class MediaLibrary(ABC):
