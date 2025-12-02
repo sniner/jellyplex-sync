@@ -180,6 +180,7 @@ def process_movie(
     dry_run: bool = False,
     delete: bool = False,
     verbose: bool = False,
+    update_filenames: bool = False,
 ) -> MovieStats:
     target_path = target.movie_path(movie)
 
@@ -243,6 +244,21 @@ def process_movie(
         else:
             target_path.mkdir(parents=True, exist_ok=True)
 
+    # Pre-scan target directory to build a map of existing inodes
+    # This optimizes stale candidate detection by avoiding repeated directory scans
+    existing_inodes: Dict[int, pathlib.Path] = {}
+    if target_path.exists():
+        for candidate in target_path.iterdir():
+            if not candidate.is_file():
+                continue
+            if candidate.suffix.lower() not in ACCEPTED_VIDEO_SUFFIXES:
+                continue
+            try:
+                existing_inodes[candidate.stat().st_ino] = candidate
+            except OSError:
+                # File might have been deleted or permission denied
+                pass
+
     # Hardlink missing video files
     for _video_name, item in videos_to_sync.items():
         if item[1].exists():
@@ -256,6 +272,75 @@ def process_movie(
                     log.info("DELETE %s", item[1])
                 else:
                     item[1].unlink()
+        else:
+            # Check if any existing file in the target folder is a hardlink to the source file
+            # This happens if the filename has changed (e.g. edition added)
+            stale_candidate: Optional[pathlib.Path] = None
+            try:
+                source_inode = item[0].stat().st_ino
+                if source_inode in existing_inodes:
+                    stale_candidate = existing_inodes[source_inode]
+            except OSError:
+                 # Source file might have been removed during processing
+                 pass
+
+            if stale_candidate:
+                # We found a file that is hardlinked to source but has wrong name
+                # Verify if editions match
+                intended_video = target.parse_video_path(item[1])
+                candidate_video = target.parse_video_path(stale_candidate)
+
+                if intended_video and candidate_video and intended_video.edition == candidate_video.edition:
+                    if update_filenames:
+                        if dry_run:
+                            log.info("RENAME %s -> %s", stale_candidate.name, item[1].name)
+                        else:
+                            log.info("Renamed '%s' -> '%s'", stale_candidate.name, item[1].name)
+                            try:
+                                stale_candidate.rename(item[1])
+                            except OSError as e:
+                                log.error("Failed to rename video file '%s': %s", stale_candidate, e)
+                                continue
+
+                        # Rename associated files
+                        stale_stem = stale_candidate.stem
+                        target_stem = item[1].stem
+                        for assoc_file in item[1].parent.iterdir():
+                            if assoc_file == item[1]:
+                                continue
+                            if not assoc_file.is_file():
+                                continue
+                            if assoc_file.suffix.lower() not in {
+                                ".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".edl", ".nfo"
+                            }:
+                                continue
+
+                            # Match by stem prefix
+                            if assoc_file.name.startswith(stale_stem + "."):
+                                suffix_part = assoc_file.name[len(stale_stem):]
+                                new_assoc_name = f"{target_stem}{suffix_part}"
+                                new_assoc_path = item[1].parent / new_assoc_name
+
+                                if dry_run:
+                                    log.info("RENAME %s -> %s", assoc_file.name, new_assoc_name)
+                                else:
+                                    log.info("Renamed '%s' -> '%s'", assoc_file.name, new_assoc_name)
+                                    try:
+                                        assoc_file.rename(new_assoc_path)
+                                    except OSError as e:
+                                        log.warning("Failed to rename associated file '%s': %s", assoc_file.name, e)
+
+                        # Remove from inode map to avoid processing again
+                        try:
+                            if source_inode in existing_inodes:
+                                del existing_inodes[source_inode]
+                        except Exception:
+                            pass
+                        continue
+                    else:
+                        log.warning("Stale hardlink '%s' should be '%s'. Use --update-filenames to fix.", stale_candidate.name, item[1].name)
+                        continue
+
         if dry_run:
             log.info("LINK   %s", item[1])
         else:
@@ -350,6 +435,7 @@ def sync(
     verbose: bool = False,
     debug: bool = False,
     convert_to: Optional[str] = None,
+    update_filenames: bool = False,
 ) -> int:
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -409,6 +495,7 @@ def sync(
             delete=delete,
             verbose=verbose,
             dry_run=dry_run,
+            update_filenames=update_filenames,
         )
         stat_movies += 1
         stat_items_linked += s.asset_items_linked + s.videos_linked

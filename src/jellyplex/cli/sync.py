@@ -20,6 +20,7 @@ def main() -> None:
     parser.add_argument("--create", action="store_true", help="Create missing target library")
     parser.add_argument("--verbose", action="store_true", help="Show more information messages")
     parser.add_argument("--debug", action="store_true", help="Show debug messages")
+    parser.add_argument("--update-filenames", action="store_true", help="Rename existing hardlinks if they have outdated names")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -39,6 +40,7 @@ def main() -> None:
             verbose=args.verbose,
             debug=args.debug,
             convert_to=args.convert_to,
+            update_filenames=args.update_filenames,
         )
     except KeyboardInterrupt:
         logging.info("INTERRUPTED")
