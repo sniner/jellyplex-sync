@@ -1,6 +1,6 @@
 # Bidirectional Movie Library Sync for Plex and Jellyfin
 
-> **Note:** This is a fork maintained by `plex-migration-homelab`. The Docker build workflow has been updated, and the image is now published to `ghcr.io/plex-migration-homelab/jellyplex-sync`.
+> **Fork Notice:** This is a fork of [sniner/jellyplex-sync](https://github.com/sniner/jellyplex-sync) maintained by `plex-migration-homelab` with enhanced features for multi-edition support, associated file syncing (subtitles, EDL files), and expanded video format support. The Docker image is published to `ghcr.io/plex-migration-homelab/jellyplex-sync`.
 
 Can't decide between Jellyfin and Plex? This tool might help. It synchronizes your **movie library** between Jellyfin and Plex formats in **both directions** — without duplicating any files. Instead, it uses **hardlinks** to mirror your collection efficiently, saving storage while keeping both libraries in sync.
 
@@ -11,6 +11,8 @@ Can't decide between Jellyfin and Plex? This tool might help. It synchronizes yo
 ## Overview
 
 The script scans the source library, parses each movie folder for metadata (title, year, optional provider ID), and reproduces the same directory structure in the target location. Rather than copying video files, it creates hard links to avoid extra storage usage. Asset folders (e.g., `extras`, `subtitles`) are also mirrored. With `--delete`, any files or folders in the target that are no longer present in the source will be removed.
+
+This fork adds enhanced support for multi-edition movies (Extended, Theatrical, Director's Cut, etc.), automatically syncing all editions found in a source folder. Associated files such as subtitles (`.srt`, `.ass`, `.ssa`, `.sub`, `.idx`, `.vtt`) and edit decision lists (`.edl`) are now synced alongside their parent videos with proper renaming. Additionally, the supported video formats have been expanded beyond `.mkv` and `.m4v` to include `.mp4`, `.avi`, `.mov`, `.wmv`, `.ts`, and `.webm`. Provider tags (such as `{tmdb-xxx}` and `{imdb-xxx}`) are now preserved from source filenames when syncing to the target to ensure correct media identification even when folder-level metadata is insufficient.
 
 > ⚠️ **Important:** This script is designed exclusively for **movie libraries**. It does **not** support TV shows or miniseries. However, this is usually not a limitation in practice: for shows, Jellyfin and Plex use very similar directory structures, so you can typically point both apps to the same library without issues.
 
@@ -124,18 +126,24 @@ This is the expected folder structure in your Jellyfin movie library. The script
 ```
 Movies
 ├── A Bridge Too Far (1977) [imdbid-tt0075784]
-│   ├── A Bridge Too Far (1977) [imdbid-tt0075784].mkv
-│   └── trailers
-│       └── A Bridge Too Far.mkv
+│   ├── A Bridge Too Far (1977) [imdbid-tt0075784].mkv
+│   ├── A Bridge Too Far (1977) [imdbid-tt0075784].en.srt
+│   ├── A Bridge Too Far (1977) [imdbid-tt0075784].en.forced.srt
+│   └── trailers
+│       └── A Bridge Too Far.mkv
 └── Das Boot (1981) [imdbid-tt0082096]
-    ├── Das Boot (1981) [imdbid-tt0082096] - Director's Cut.mkv
-    ├── Das Boot (1981) [imdbid-tt0082096] - Theatrical Cut.mkv
-    └── other
-        ├── Production Photos.mkv
-        └── Making of.mkv
+    ├── Das Boot (1981) [imdbid-tt0082096] - Director's Cut.mkv
+    ├── Das Boot (1981) [imdbid-tt0082096] - Director's Cut.de.srt
+    ├── Das Boot (1981) [imdbid-tt0082096] - Director's Cut.en.srt
+    ├── Das Boot (1981) [imdbid-tt0082096] - Theatrical Cut.mp4
+    ├── Das Boot (1981) [imdbid-tt0082096] - Theatrical Cut.en.srt
+    ├── Das Boot (1981) [imdbid-tt0082096] - Theatrical Cut.edl
+    └── other
+        ├── Production Photos.mkv
+        └── Making of.mkv
 ```
 
-Each movie must reside in its own folder, with optional subfolders for extras. Different editions (e.g., Director's Cut, Theatrical Cut) must be named accordingly.
+Each movie must reside in its own folder, with optional subfolders for extras. Different editions (e.g., Director's Cut, Theatrical Cut) are fully supported, with each edition able to have its own video file and associated subtitle/EDL files. Note how different video formats (`.mkv`, `.mp4`) can be used for different editions within the same movie folder.
 
 ### Special filename handling
 
@@ -145,9 +153,9 @@ This naming convention is something I came up with for my personal library — i
 
 ## Plex movie library outline
 
-Plex follows a more structured naming convention than Jellyfin. While Jellyfin typically appends edition or variant information using a ` - ` (space-hyphen-space) pattern, Plex supports additional metadata inside **curly braces** for editions and **square brackets** for versions or other details.
+Plex follows a more structured naming convention than Jellyfin. While Jellyfin typically appends edition or variant information using a ` - ` (space-hyphen-space) pattern, Plex supports additional metadata inside **curly braces** for editions and **square brackets** for versions or other details.
 
-Unlike Jellyfin, Plex’s naming system allows you to embed extra tags such as release source (`[BluRay]`), quality (`[4K]`), or codec (`[HEVC]`) directly in the filename. These tags are ignored by the default Plex scanners during media recognition, but remain visible in the interface — which makes them useful for organizing your collection without affecting playback or matching.
+Unlike Jellyfin, Plex's naming system allows you to embed extra tags such as release source (`[BluRay]`), quality (`[4K]`), or codec (`[HEVC]`) directly in the filename. These tags are ignored by the default Plex scanners during media recognition, but remain visible in the interface — which makes them useful for organizing your collection without affecting playback or matching.
 
 > Note: This behavior applies to Plex's default scanner. If you use custom scanners or agents, they may treat these tags differently.
 
@@ -158,16 +166,70 @@ This is the expected folder structure in Plex format (with some demo tags):
 ```
 Movies
 ├── A Bridge Too Far (1977) {imdb-tt0075784}
-│   ├── A Bridge Too Far (1977) {imdb-tt0075784}.mkv
-│   └── trailers
-│       └── A Bridge Too Far.mkv
+│   ├── A Bridge Too Far (1977) {imdb-tt0075784}.mkv
+│   ├── A Bridge Too Far (1977) {imdb-tt0075784}.en.srt
+│   └── trailers
+│       └── A Bridge Too Far.mkv
 └── Das Boot (1981) {imdb-tt0082096}
-    ├── Das Boot (1981) {imdb-tt0082096} {edition-Director's Cut} [1080p].mkv
-    ├── Das Boot (1981) {imdb-tt0082096} {edition-Theatrical Cut} [1080p][remux].mkv
-    └── other
-        ├── Production Photos.mkv
-        └── Making of.mkv
+    ├── Das Boot (1981) {imdb-tt0082096} {edition-Director's Cut} [1080p].mkv
+    ├── Das Boot (1981) {imdb-tt0082096} {edition-Director's Cut}.de.srt
+    ├── Das Boot (1981) {imdb-tt0082096} {edition-Director's Cut}.en.srt
+    ├── Das Boot (1981) {imdb-tt0082096} {edition-Theatrical Cut} [1080p].mp4
+    ├── Das Boot (1981) {imdb-tt0082096} {edition-Theatrical Cut}.en.srt
+    ├── Das Boot (1981) {imdb-tt0082096} {edition-Theatrical Cut}.edl
+    └── other
+        ├── Production Photos.mkv
+        └── Making of.mkv
 ```
+
+Note how associated files (subtitles, EDL files) follow the same naming pattern as their parent video files, ensuring they're correctly paired during sync. Provider tags like `{imdb-xxx}` or `{tmdb-xxx}` in source video filenames are preserved when syncing to the target, even when they're not present in the folder name.
+
+## Testing
+
+Before running the script on your production library, it's recommended to test with `--dry-run` and `--verbose` to preview what changes will be made:
+
+```bash
+# Dry-run to preview changes
+docker run --rm -v /your/media:/mnt ghcr.io/plex-migration-homelab/jellyplex-sync:latest \
+    --dry-run --verbose --delete --create /mnt/source /mnt/target
+```
+
+When testing multi-edition support, verify that:
+- All editions in a source folder are linked in the target (not just the first one found)
+- Each edition retains its correct naming pattern
+- Associated subtitle and EDL files appear alongside their parent videos
+
+To verify hardlinks are working correctly (not copies):
+
+```bash
+# Check inode numbers - they should match for hardlinked files
+stat /path/to/source/movie.mkv
+stat /path/to/target/movie.mkv
+# Look for the "Inode" value in the output - it should be identical
+```
+
+If the inode numbers differ, the files were copied instead of hardlinked. This typically means the source and target are on different filesystems or the Docker volume mount wasn't configured correctly.
+
+## Migration from Original
+
+If you're switching from the original [sniner/jellyplex-sync](https://github.com/sniner/jellyplex-sync):
+
+- **No data loss risk**: Existing synced files won't be recreated or modified. The script detects existing hardlinks and preserves them.
+- **Incremental additions**: New editions or associated files found in your source library will be added on the next sync run.
+- **Backwards compatible**: Your existing library structure remains valid. The enhancements simply add support for features that previously weren't synced.
+- **Docker image**: Update your scripts to pull from `ghcr.io/plex-migration-homelab/jellyplex-sync:latest` instead of the original repository.
+
+To migrate, simply run the updated tool against your existing libraries. Use `--dry-run` first to preview what new files will be added.
+
+## Differences from Upstream
+
+This fork differs from the original [sniner/jellyplex-sync](https://github.com/sniner/jellyplex-sync) in the following ways:
+
+- **Expanded video formats**: Added support for `.mp4`, `.avi`, `.mov`, `.wmv`, `.ts`, and `.webm` (original only supported `.mkv` and `.m4v`)
+- **Multi-edition support**: All editions in a source folder are synced, not just the first one found. Each edition gets its own properly-named hardlink in the target.
+- **Associated file syncing**: Subtitles (`.srt`, `.ass`, `.ssa`, `.sub`, `.idx`, `.vtt`) and EDL files (`.edl`) are now synced alongside their parent videos with matching names.
+- **Provider tag preservation**: File-level provider tags (`{tmdb-xxx}`, `{imdb-xxx}`) are preserved from source filenames to target filenames, ensuring correct media identification even when folder-level metadata is insufficient.
+- **Backwards compatibility**: Fully compatible with existing synced libraries created by the original tool. No breaking changes to library structure or naming conventions.
 
 ## License
 
