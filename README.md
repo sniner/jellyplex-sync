@@ -12,7 +12,7 @@ Can't decide between Jellyfin and Plex? This tool might help. It synchronizes yo
 
 The script scans the source library, parses each movie folder for metadata (title, year, optional provider ID), and reproduces the same directory structure in the target location. Rather than copying video files, it creates hard links to avoid extra storage usage. Asset folders (e.g., `extras`, `subtitles`) are also mirrored. With `--delete`, any files or folders in the target that are no longer present in the source will be removed.
 
-This fork adds enhanced support for multi-edition movies (Extended, Theatrical, Director's Cut, etc.), automatically syncing all editions found in a source folder. Associated files such as subtitles (`.srt`, `.ass`, `.vtt`, etc.) and edit decision lists (`.edl`) are now synced alongside their parent videos with proper renaming. Additionally, the supported video formats have been expanded beyond `.mkv` and `.m4v` to include `.mp4`, `.avi`, `.mov`, `.wmv`, `.ts`, and `.webm`. Provider tags (such as `{tmdb-xxx}` and `{imdb-xxx}`) are now preserved from source filenames to ensure correct media identification even when folder-level metadata is insufficient.
+This fork adds enhanced support for multi-edition movies (Extended, Theatrical, Director's Cut, etc.), automatically syncing all editions found in a source folder. Associated files such as subtitles (`.srt`, `.ass`, `.ssa`, `.sub`, `.idx`, `.vtt`) and edit decision lists (`.edl`) are now synced alongside their parent videos with proper renaming. Additionally, the supported video formats have been expanded beyond `.mkv` and `.m4v` to include `.mp4`, `.avi`, `.mov`, `.wmv`, `.ts`, and `.webm`. Provider tags (such as `{tmdb-xxx}` and `{imdb-xxx}`) are now preserved from source filenames when syncing to the target to ensure correct media identification even when folder-level metadata is insufficient.
 
 > ⚠️ **Important:** This script is designed exclusively for **movie libraries**. It does **not** support TV shows or miniseries. However, this is usually not a limitation in practice: for shows, Jellyfin and Plex use very similar directory structures, so you can typically point both apps to the same library without issues.
 
@@ -182,7 +182,7 @@ Movies
         └── Making of.mkv
 ```
 
-Note how associated files (subtitles, EDL files) follow the same naming pattern as their parent video files, ensuring they're correctly paired during sync. Provider tags like `{imdb-xxx}` or `{tmdb-xxx}` in video filenames are preserved in the target, even when they're not present in the folder name.
+Note how associated files (subtitles, EDL files) follow the same naming pattern as their parent video files, ensuring they're correctly paired during sync. Provider tags like `{imdb-xxx}` or `{tmdb-xxx}` in source video filenames are preserved when syncing to the target, even when they're not present in the folder name.
 
 ## Testing
 
