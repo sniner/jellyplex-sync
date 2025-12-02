@@ -35,6 +35,14 @@ class PlexLibrary(MediaLibrary):
 
     def video_name(self, movie: MovieInfo, video: VideoInfo) -> str:
         parts = [self.movie_name(movie)]
+
+        if video.providers:
+            existing_id = f"{movie.provider}-{movie.movie_id}" if movie.provider and movie.movie_id else None
+            for p_tag in sorted(list(video.providers)):
+                if p_tag == existing_id:
+                    continue
+                parts.append(f"{{{p_tag}}}")
+
         if video.edition:
             parts.append(f"{{edition-{video.edition}}}")
         if video.tags:
@@ -98,11 +106,14 @@ class PlexLibrary(MediaLibrary):
         name = path.stem
         leftover = name
 
-        # Find edition
+        # Find edition and providers
         edition: Optional[str] = None
+        providers: Set[str] = set()
         for key, val, blk in self._parse_meta_blocks(name):
             if key.lower() == "edition":
                 edition = val
+            elif key.lower() in PLEX_METADATA_PROVIDER:
+                providers.add(f"{key.lower()}-{val}")
             leftover = leftover.replace(blk, "")
 
         # Find additional metadata
@@ -125,4 +136,5 @@ class PlexLibrary(MediaLibrary):
             extension=path.suffix,
             resolution=resolution,
             tags=tags if tags else None,
+            providers=providers if providers else None,
         )

@@ -16,6 +16,7 @@ SANE_SAMPLES = [
             edition=None,
             resolution=None,
             tags=None,
+            providers=None,
         )
     ),
     (
@@ -25,6 +26,7 @@ SANE_SAMPLES = [
             edition=None,
             resolution=None,
             tags=None,
+            providers=None,
         )
     ),
     (
@@ -34,6 +36,7 @@ SANE_SAMPLES = [
             edition=None,
             resolution=None,
             tags=None,
+            providers={"imdb-tt123456"},
         )
     ),
     (
@@ -43,6 +46,7 @@ SANE_SAMPLES = [
             edition=None,
             resolution=None,
             tags=None,
+            providers={"imdb-tt654321"},
         )
     ),
     (
@@ -53,6 +57,7 @@ SANE_SAMPLES = [
             edition=None,
             resolution=None,
             tags=None,
+            providers={"imdb-tt654321"},
         )
     ),
     (
@@ -62,6 +67,7 @@ SANE_SAMPLES = [
             edition="Director's Cut",
             resolution=None,
             tags=None,
+            providers={"imdb-tt654321"},
         )
     ),
     (
@@ -71,6 +77,7 @@ SANE_SAMPLES = [
             edition="Director's Cut",
             resolution=None,
             tags={"DVD",},
+            providers={"imdb-tt654321"},
         )
     ),
     (
@@ -80,6 +87,7 @@ SANE_SAMPLES = [
             edition="Director's Cut",
             resolution="1080p",
             tags=None,
+            providers=None,
         )
     ),
     (
@@ -89,6 +97,7 @@ SANE_SAMPLES = [
             edition="Director's Cut",
             resolution="1080p",
             tags=None,
+            providers=None,
         )
     ),
     (
@@ -98,6 +107,28 @@ SANE_SAMPLES = [
             edition=None,
             resolution="1080p",
             tags={"remux",},
+            providers={"imdb-tt123456"},
+        )
+    ),
+    (
+        Path("First movie (1970) {tmdb-54186} [1080p].mkv"),
+        jp.VideoInfo(
+            extension=".mkv",
+            edition=None,
+            resolution="1080p",
+            tags=None,
+            providers={"tmdb-54186"},
+        )
+    ),
+    (
+        # Case sensitivity check
+        Path("First movie (1970) {IMDB-tt123456} [1080p].mkv"),
+        jp.VideoInfo(
+            extension=".mkv",
+            edition=None,
+            resolution="1080p",
+            tags=None,
+            providers={"imdb-tt123456"},
         )
     ),
 ]
@@ -111,6 +142,7 @@ NOT_RECOMMENDED_SAMPLES = [
             edition=None,
             resolution="1080p",
             tags={"remux",},
+            providers={"imdb-tt123456"},
         )
     ),
     (
@@ -121,6 +153,7 @@ NOT_RECOMMENDED_SAMPLES = [
             edition="Director's Cut",
             resolution="1080p",
             tags={"remux","hello world"},
+            providers={"imdb-tt123456"},
         )
     ),
     (
@@ -144,6 +177,7 @@ NOT_WORKING_SAMPLES = [
             edition=None,
             resolution="1080p",
             tags={"hello", "remux"},
+            providers={"imdb-tt123456"},
         )
     ),
     (
