@@ -180,6 +180,7 @@ def process_movie(
     dry_run: bool = False,
     delete: bool = False,
     verbose: bool = False,
+    update_filenames: bool = False,
 ) -> MovieStats:
     target_path = target.movie_path(movie)
 
@@ -256,6 +257,66 @@ def process_movie(
                     log.info("DELETE %s", item[1])
                 else:
                     item[1].unlink()
+        else:
+            # Check if any existing file in the target folder is a hardlink to the source file
+            # This happens if the filename has changed (e.g. edition added)
+            stale_candidate: Optional[pathlib.Path] = None
+            if item[1].parent.exists():
+                for candidate in item[1].parent.iterdir():
+                    if not candidate.is_file():
+                        continue
+                    if candidate.suffix.lower() not in ACCEPTED_VIDEO_SUFFIXES:
+                        continue
+                    try:
+                        if candidate.samefile(item[0]):
+                            stale_candidate = candidate
+                            break
+                    except OSError:
+                        pass
+
+            if stale_candidate:
+                # We found a file that is hardlinked to source but has wrong name
+                # Verify if editions match
+                intended_video = target.parse_video_path(item[1])
+                candidate_video = target.parse_video_path(stale_candidate)
+
+                if intended_video and candidate_video and intended_video.edition == candidate_video.edition:
+                    if update_filenames:
+                        if dry_run:
+                            log.info("RENAME %s -> %s", stale_candidate.name, item[1].name)
+                        else:
+                            log.info("Renamed '%s' -> '%s'", stale_candidate.name, item[1].name)
+                            stale_candidate.rename(item[1])
+
+                        # Rename associated files
+                        stale_stem = stale_candidate.stem
+                        target_stem = item[1].stem
+                        for assoc_file in item[1].parent.iterdir():
+                            if assoc_file == stale_candidate:
+                                continue
+                            if not assoc_file.is_file():
+                                continue
+                            if assoc_file.suffix.lower() not in {
+                                ".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".edl", ".nfo"
+                            }:
+                                continue
+
+                            # Match by stem prefix
+                            if assoc_file.name.startswith(stale_stem + "."):
+                                suffix_part = assoc_file.name[len(stale_stem):]
+                                new_assoc_name = f"{target_stem}{suffix_part}"
+                                new_assoc_path = item[1].parent / new_assoc_name
+
+                                if dry_run:
+                                    log.info("RENAME %s -> %s", assoc_file.name, new_assoc_name)
+                                else:
+                                    log.info("Renamed '%s' -> '%s'", assoc_file.name, new_assoc_name)
+                                    assoc_file.rename(new_assoc_path)
+                        continue
+                    else:
+                        log.warning("Stale hardlink '%s' should be '%s'. Use --update-filenames to fix.", stale_candidate.name, item[1].name)
+                        continue
+
         if dry_run:
             log.info("LINK   %s", item[1])
         else:
@@ -350,6 +411,7 @@ def sync(
     verbose: bool = False,
     debug: bool = False,
     convert_to: Optional[str] = None,
+    update_filenames: bool = False,
 ) -> int:
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -409,6 +471,7 @@ def sync(
             delete=delete,
             verbose=verbose,
             dry_run=dry_run,
+            update_filenames=update_filenames,
         )
         stat_movies += 1
         stat_items_linked += s.asset_items_linked + s.videos_linked
