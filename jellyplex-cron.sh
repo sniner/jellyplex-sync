@@ -14,6 +14,7 @@
 # ==============================================================================
 
 # Path to the queue file (Must match the location written by Radarr hook, but from Host perspective)
+# (Radarr sees this as /Cumflix/.jellyplex-queue due to container path mapping)
 QUEUE_FILE="${QUEUE_FILE:-/mnt/user/Media/.jellyplex-queue}"
 LOCK_FILE="/tmp/jellyplex-cron.lock"
 LOG_FILE="${LOG_FILE:-/mnt/user/appdata/radarr/logs/jellyplex-sync.log}"
@@ -65,7 +66,7 @@ if [[ -z "$PATHS" ]]; then
     exit 0
 fi
 
-FAILED=0
+FAILED_COUNT=0
 SYNCED_PATHS=()
 
 # Process each unique movie
@@ -98,6 +99,7 @@ while IFS= read -r movie_path; do
         --verbose \
         --delete \
         --create \
+        --update-filenames \
         --partial "$movie_path" \
         "/mnt/${SOURCE_LIB}" \
         "/mnt/${TARGET_LIB}" >> "$LOG_FILE" 2>&1
@@ -105,7 +107,7 @@ while IFS= read -r movie_path; do
     EXIT_CODE=$?
     if [[ $EXIT_CODE -ne 0 ]]; then
         echo "[$(date)] ERROR: Sync failed for $movie_path (Exit: $EXIT_CODE)" >> "$LOG_FILE"
-        FAILED=1
+        ((FAILED_COUNT++))
     else
         SYNCED_PATHS+=("$movie_path")
     fi
@@ -171,5 +173,5 @@ else
     echo "[$(date)] Skipping Jellyfin notification (No API Key or no successful syncs)" >> "$LOG_FILE"
 fi
 
-echo "[$(date)] Batch sync complete." >> "$LOG_FILE"
-exit $FAILED
+echo "[$(date)] Batch sync complete: ${#SYNCED_PATHS[@]} synced, $FAILED_COUNT failed." >> "$LOG_FILE"
+exit $((FAILED_COUNT > 0 ? 1 : 0))
