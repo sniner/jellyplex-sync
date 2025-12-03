@@ -66,13 +66,13 @@ if [[ "${radarr_movie_path}" == *"/movies-4k/"* ]]; then
     SOURCE_LIB="movies-4k"
     TARGET_LIB="jellyfin/movies-4k"
     # Replace /movies-4k/ with /jellyfin/movies-4k/ for local operations
-    LOCAL_TARGET_PATH="${radarr_movie_path/movies-4k/jellyfin\/movies-4k}"
+    LOCAL_TARGET_PATH="${radarr_movie_path/movies-4k/jellyfin/movies-4k}"
 else
     # Default to standard movies
     SOURCE_LIB="movies"
     TARGET_LIB="jellyfin/movies"
     # Replace /movies/ with /jellyfin/movies/ for local operations
-    LOCAL_TARGET_PATH="${radarr_movie_path/movies/jellyfin\/movies}"
+    LOCAL_TARGET_PATH="${radarr_movie_path/movies/jellyfin/movies}"
 fi
 
 log "Library Detected: ${SOURCE_LIB}"
