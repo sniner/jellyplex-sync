@@ -52,15 +52,13 @@ The script includes default values, but you can override them by passing environ
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `JELLYFIN_URL` | Your Jellyfin Server URL | `http://192.168.3.51:8096` |
-| `JELLYFIN_API_KEY` | Jellyfin API Key (**set securely via environment variable or Docker secret**) | `<set via env>` |
+| `JELLYFIN_URL` | Your Jellyfin Server URL | `http://localhost:8096` (Use HTTPS in production) |
+| `JELLYFIN_API_KEY` | Jellyfin API Key | **(Set via Environment Variable)** |
 | `LOG_FILE` | Path to log file (inside container) | `/config/logs/jellyplex-sync.log` |
 | `MOUNT_SOURCE` | Path to media library **on the host** | `/mnt/user/Media` |
 
 **Important**: `MOUNT_SOURCE` must be the absolute path on your Unraid host, not the path inside the Radarr container (e.g., `/Cumflix`). This is because the script instructs the Docker daemon (running on the host) to mount this path.
 
-**Security Note:**  
-Never use hardcoded or published API keys. Always set `JELLYFIN_API_KEY` securely via environment variables or Docker secrets in your container configuration (e.g., Docker Compose, Unraid template). Do not commit or share your API key in documentation or code.
 To set these in Radarr without editing the script, you would typically need to set them in the Radarr container's environment variables (e.g., in your Docker Compose or Unraid template).
 
 ## Troubleshooting

@@ -11,9 +11,9 @@
 # ==============================================================================
 
 # Jellyfin Configuration (Pass these as Environment Variables or set here)
-# Defaults taken from legacy script
-JELLYFIN_URL="${JELLYFIN_URL:-http://192.168.3.51:8096}"
-JELLYFIN_API_KEY="${JELLYFIN_API_KEY:-05ab7145a0714683a03fe0ce106dd033}"
+# SECURITY NOTE: It is recommended to use HTTPS for JELLYFIN_URL and set JELLYFIN_API_KEY via environment variables.
+JELLYFIN_URL="${JELLYFIN_URL:-http://localhost:8096}"
+JELLYFIN_API_KEY="${JELLYFIN_API_KEY:-}"
 
 # Docker Configuration
 SYNC_IMAGE="ghcr.io/plex-migration-homelab/jellyplex-sync:latest"
@@ -66,13 +66,13 @@ if [[ "${radarr_movie_path}" == *"/movies-4k/"* ]]; then
     SOURCE_LIB="movies-4k"
     TARGET_LIB="jellyfin/movies-4k"
     # Replace /movies-4k/ with /jellyfin/movies-4k/ for local operations
-    LOCAL_TARGET_PATH="${radarr_movie_path/movies-4k/jellyfin/movies-4k}"
+    LOCAL_TARGET_PATH="${radarr_movie_path/movies-4k/jellyfin\/movies-4k}"
 else
     # Default to standard movies
     SOURCE_LIB="movies"
     TARGET_LIB="jellyfin/movies"
     # Replace /movies/ with /jellyfin/movies/ for local operations
-    LOCAL_TARGET_PATH="${radarr_movie_path/movies/jellyfin/movies}"
+    LOCAL_TARGET_PATH="${radarr_movie_path/movies/jellyfin\/movies}"
 fi
 
 log "Library Detected: ${SOURCE_LIB}"
@@ -82,7 +82,7 @@ log "Sync Target (Container): /mnt/${TARGET_LIB}"
 # 3. Direct Execution (Docker)
 # ----------------------------
 # Runs the sync container immediately.
-# -v "${MOUNT_SOURCE}:/mnt" maps the host's media library (${MOUNT_SOURCE}) to the container's /mnt
+# -v "${MOUNT_SOURCE}:/mnt" maps Radarr's /Cumflix to Container's /mnt
 # --partial passes the raw Radarr path for the Python script to resolve
 
 log "Executing Docker Sync..."
@@ -113,9 +113,16 @@ log "Sync completed successfully."
 
 if [[ -d "$LOCAL_TARGET_PATH" ]]; then
     log "Setting ownership on $LOCAL_TARGET_PATH..."
-    chown -R 99:100 "$LOCAL_TARGET_PATH"
+    if chown -R 99:100 "$LOCAL_TARGET_PATH"; then
+        log "Ownership set successfully."
+    else
+        CHOWN_EXIT=$?
+        log "ERROR: Failed to set ownership on $LOCAL_TARGET_PATH (Exit Code: $CHOWN_EXIT). Check permissions."
+        # We don't exit here as the sync itself was successful, but we log the error.
+    fi
 else
-    log "WARNING: Target path $LOCAL_TARGET_PATH not found, skipping chown."
+    log "ERROR: Target path $LOCAL_TARGET_PATH not found after sync. The sync may have failed or path substitution is incorrect."
+    exit 2
 fi
 
 # 5. Jellyfin Notification
@@ -125,6 +132,9 @@ fi
 
 JELLYFIN_PATH=$(echo "$radarr_movie_path" | sed 's|^/Cumflix/movies-4k/|/media/jellyfin/movies-4k/|; s|^/Cumflix/movies/|/media/jellyfin/movies/|')
 
+# JSON Escape the path (escape backslashes and double quotes)
+JELLYFIN_PATH_ESCAPED=$(echo "$JELLYFIN_PATH" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
 log "Notifying Jellyfin: $JELLYFIN_PATH"
 
 if [[ -n "$JELLYFIN_API_KEY" ]]; then
@@ -132,7 +142,7 @@ if [[ -n "$JELLYFIN_API_KEY" ]]; then
         -X POST "${JELLYFIN_URL}/Library/Media/Updated" \
         -H "X-Emby-Token: ${JELLYFIN_API_KEY}" \
         -H "Content-Type: application/json" \
-        -d "{\"Updates\":[{\"Path\":\"${JELLYFIN_PATH}\",\"UpdateType\":\"Created\"}]}")
+        -d "{\"Updates\":[{\"Path\":\"${JELLYFIN_PATH_ESCAPED}\",\"UpdateType\":\"Created\"}]}")
 
     if [[ "$HTTP_CODE" == "204" ]] || [[ "$HTTP_CODE" == "200" ]]; then
         log "Jellyfin scan triggered successfully (HTTP $HTTP_CODE)"
