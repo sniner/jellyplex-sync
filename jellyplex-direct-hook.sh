@@ -82,7 +82,7 @@ log "Sync Target (Container): /mnt/${TARGET_LIB}"
 # 3. Direct Execution (Docker)
 # ----------------------------
 # Runs the sync container immediately.
-# -v "${MOUNT_SOURCE}:/mnt" maps Radarr's /Cumflix to Container's /mnt
+# -v "${MOUNT_SOURCE}:/mnt" maps the host's media library (${MOUNT_SOURCE}) to the container's /mnt
 # --partial passes the raw Radarr path for the Python script to resolve
 
 log "Executing Docker Sync..."
