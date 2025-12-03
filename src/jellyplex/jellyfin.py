@@ -48,6 +48,7 @@ class SimpleVariantParser(VariantParser):
             edition=variant.strip(),
             resolution=video.resolution,
             tags=video.tags,
+            providers=video.providers,
         )
 
     def _tags_to_variant(self, video: VideoInfo) -> List[str]:
@@ -58,8 +59,43 @@ class SimpleVariantParser(VariantParser):
                 return [tag.upper()]
         return []
 
+    def _providers_to_jellyfin(self, video: VideoInfo, movie_name: str) -> List[str]:
+        """Convert provider tags from Plex format to Jellyfin format.
+
+        Args:
+            video: VideoInfo containing providers set
+            movie_name: The movie name to check for existing provider tags
+
+        Returns:
+            List of formatted provider tags like ["[tmdbid-585]", "[imdbid-tt0198781]"]
+        """
+        if not video.providers:
+            return []
+
+        provider_tags = []
+        movie_name_lower = movie_name.lower()
+
+        for provider in video.providers:
+            # Convert "tmdb-585" to "[tmdbid-585]"
+            if "-" in provider:
+                provider_type, provider_id = provider.split("-", 1)
+                jellyfin_tag = f"[{provider_type}id-{provider_id}]"
+
+                # Skip if already present in movie_name (case-insensitive)
+                if jellyfin_tag.lower() not in movie_name_lower:
+                    provider_tags.append(jellyfin_tag)
+
+        return provider_tags
+
     def video_name(self, movie_name: str, video: VideoInfo) -> str:
         parts = [movie_name]
+
+        # Add provider tags after movie_name
+        provider_tags = self._providers_to_jellyfin(video, movie_name)
+        if provider_tags:
+            parts.extend(provider_tags)
+
+        # Add variant parts
         variant_parts = self._tags_to_variant(video)
         if video.edition:
             variant_parts.append(video.edition)
@@ -118,6 +154,7 @@ class SninerVariantParser(SimpleVariantParser):
             edition=edition if edition else None,
             resolution=res,
             tags=tags if tags else None,
+            providers=video.providers,
         )
 
     def _tags_to_variant(self, video: VideoInfo) -> List[str]:
