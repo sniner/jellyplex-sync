@@ -91,6 +91,9 @@ jellyplex-sync [OPTIONS] /path/to/jellyfin/library /path/to/plex/library
 - `--convert-to=...`
   Choose between `jellyfin`, `plex` or `auto` (which is the default): `jellyfin` assumes the source library is in Plex format and creates a Jellyfin-compatible mirror. `plex` does the opposite. And `auto` inspects the source library and selects the appropriate conversion automatically.
 
+- `--update-filenames`
+  Rename existing hardlinks in the target library if they are stale (i.e., pointing to the correct source file but with an outdated name). This is useful when naming conventions change (e.g., adding provider IDs or edition tags) and you want to fix the target filenames without recreating the hardlinks. If not specified, stale links will cause a warning and the creation of a duplicate file (the new correct name) will be skipped to avoid conflicts.
+
 ## Examples
 
 Mirror a Jellyfin library into an empty Plex structure:
@@ -229,6 +232,7 @@ This fork differs from the original [sniner/jellyplex-sync](https://github.com/s
 - **Multi-edition support**: All editions in a source folder are synced, not just the first one found. Each edition gets its own properly-named hardlink in the target.
 - **Associated file syncing**: Subtitles (`.srt`, `.ass`, `.ssa`, `.sub`, `.idx`, `.vtt`) and EDL files (`.edl`) are now synced alongside their parent videos with matching names.
 - **Provider tag preservation**: File-level provider tags (`{tmdb-xxx}`, `{imdb-xxx}`) are preserved from source filenames to target filenames, ensuring correct media identification even when folder-level metadata is insufficient.
+- **Stale link handling**: Detects and optionally renames existing hardlinks that have outdated filenames (via `--update-filenames`), preventing duplicates when naming conventions change.
 - **Backwards compatibility**: Fully compatible with existing synced libraries created by the original tool. No breaking changes to library structure or naming conventions.
 
 ## License
