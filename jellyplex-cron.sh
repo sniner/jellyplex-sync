@@ -29,6 +29,16 @@ MOUNT_SOURCE="${MOUNT_SOURCE:-/mnt/user/Media}"
 JELLYFIN_URL="${JELLYFIN_URL:-http://localhost:8096}"
 JELLYFIN_API_KEY="${JELLYFIN_API_KEY:-}"
 
+# Library Configuration (Configurable patterns)
+# 4K Library
+LIB_4K_PATTERN="${LIB_4K_PATTERN:-/movies-4k/}"
+SOURCE_4K="${SOURCE_4K:-movies-4k}"
+TARGET_4K="${TARGET_4K:-jellyfin/movies-4k}"
+
+# Standard Library
+SOURCE_STD="${SOURCE_STD:-movies}"
+TARGET_STD="${TARGET_STD:-jellyfin/movies}"
+
 # Warn if Jellyfin API key is not set
 if [[ -z "$JELLYFIN_API_KEY" ]]; then
     echo "[$(date)] WARNING: JELLYFIN_API_KEY is not set. Jellyfin notifications will not be sent." >> "$LOG_FILE"
@@ -87,12 +97,12 @@ while IFS= read -r movie_path; do
 
     # We still need to determine SOURCE/TARGET for the main sync arguments.
     # We guess based on the string.
-    if [[ "$movie_path" == *"/movies-4k/"* ]]; then
-        SOURCE_LIB="movies-4k"
-        TARGET_LIB="jellyfin/movies-4k"
+    if [[ "$movie_path" == *"${LIB_4K_PATTERN}"* ]]; then
+        SOURCE_LIB="$SOURCE_4K"
+        TARGET_LIB="$TARGET_4K"
     else
-        SOURCE_LIB="movies"
-        TARGET_LIB="jellyfin/movies"
+        SOURCE_LIB="$SOURCE_STD"
+        TARGET_LIB="$TARGET_STD"
     fi
 
     # Execute Docker Sync
@@ -126,8 +136,8 @@ rm -f "$PROCESSING_FILE"
 echo "[$(date)] Setting permissions..." >> "$LOG_FILE"
 # We define standard targets based on our assumption of layout
 TARGET_DIRS=(
-    "${MOUNT_SOURCE}/jellyfin/movies"
-    "${MOUNT_SOURCE}/jellyfin/movies-4k"
+    "${MOUNT_SOURCE}/${TARGET_STD}"
+    "${MOUNT_SOURCE}/${TARGET_4K}"
 )
 
 for target_dir in "${TARGET_DIRS[@]}"; do
@@ -154,8 +164,18 @@ if [[ -n "$JELLYFIN_API_KEY" && ${#SYNCED_PATHS[@]} -gt 0 ]]; then
     # We construct a JSON array for the Updates
     JSON_UPDATES=""
     for raw_path in "${SYNCED_PATHS[@]}"; do
-        # Apply strict sed substitution as requested previously
-        JELLYFIN_PATH=$(echo "$raw_path" | sed 's|^/Cumflix/movies-4k/|/media/jellyfin/movies-4k/|; s|^/Cumflix/movies/|/media/jellyfin/movies/|')
+        # Apply strict sed substitution as requested previously, but using variables
+        # Note: We assume Radarr path (/Cumflix) needs to map to Jellyfin internal path (/media)
+        # and we use the library names detected earlier.
+
+        # Construct dynamic sed pattern
+        # Replace /Cumflix/<source_lib>/ with /media/<target_lib>/
+        # We assume standard Radarr mount /Cumflix maps to Host Media (or whatever path prefix is used)
+
+        # We use a rough heuristic: replace the source lib name with target lib name
+        # and change the prefix /Cumflix to /media if present.
+
+        JELLYFIN_PATH=$(echo "$raw_path" | sed "s|${SOURCE_4K}|${TARGET_4K}|; s|${SOURCE_STD}|${TARGET_STD}|; s|^/Cumflix/|/media/|")
 
         # Escape for JSON
         JELLYFIN_PATH_ESCAPED=$(echo "$JELLYFIN_PATH" | sed 's/\\/\\\\/g; s/"/\\"/g')
