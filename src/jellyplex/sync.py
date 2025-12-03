@@ -33,6 +33,8 @@ class LibraryStats:
 
 def resolve_movie_folder(source_lib: MediaLibrary, partial_path: str) -> Optional[pathlib.Path]:
     """Resolves a partial path to a valid folder in the source library."""
+    if not partial_path:
+        return None
     path = pathlib.Path(partial_path)
 
     # If path exists and is absolute or relative to cwd
@@ -44,7 +46,7 @@ def resolve_movie_folder(source_lib: MediaLibrary, partial_path: str) -> Optiona
             if source_lib.base_dir.resolve() in path.resolve().parents or source_lib.base_dir.resolve() == path.resolve():
                 return path
         except Exception:
-            log.exception("Failed to resolve movie folder path")
+            pass
 
     # Try matching by folder name
     # This handles Docker path remapping
@@ -517,6 +519,7 @@ def sync(
         if not movie_info:
             log.warning(f"Could not parse movie info from folder: {movie_folder}")
             # We skip this as we cannot process it without parsed info
+            return 1
         else:
             s = process_movie(
                 source_lib,

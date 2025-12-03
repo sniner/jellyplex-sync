@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import os
 import pathlib
 import sys
 
@@ -37,8 +38,11 @@ def main() -> None:
     partial_path = args.partial
 
     if args.radarr_hook:
-        import os
         event_type = os.environ.get("radarr_eventtype")
+        if event_type is None:
+            logging.error("radarr_eventtype environment variable not set")
+            sys.exit(1)
+
         if event_type == "Test":
             logging.info("Radarr connection test successful")
             sys.exit(0)
