@@ -29,6 +29,11 @@ MOUNT_SOURCE="${MOUNT_SOURCE:-/mnt/user/Media}"
 JELLYFIN_URL="${JELLYFIN_URL:-http://localhost:8096}"
 JELLYFIN_API_KEY="${JELLYFIN_API_KEY:-}"
 
+# Warn if Jellyfin API key is not set
+if [[ -z "$JELLYFIN_API_KEY" ]]; then
+    echo "[$(date)] WARNING: JELLYFIN_API_KEY is not set. Jellyfin notifications will not be sent." >> "$LOG_FILE"
+fi
+
 # ==============================================================================
 # LOGIC
 # ==============================================================================

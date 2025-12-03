@@ -316,8 +316,10 @@ def process_movie(
                 intended_video = target.parse_video_path(item[1])
                 candidate_video = target.parse_video_path(stale_candidate)
 
-                # Relaxed check: trust the inode (it's the same physical file) if update_filenames is requested
-                # or if the editions match exactly
+                # Relaxed check: trust the inode (it's the same physical file) if update_filenames is requested.
+                # When update_filenames is True, we trust the inode match and rename regardless of edition compatibility,
+                # which may change edition tags or rename files even if editions don't match or can't be parsed.
+                # Otherwise, only rename if the editions match exactly.
                 editions_match = intended_video and candidate_video and intended_video.edition == candidate_video.edition
 
                 if update_filenames or editions_match:
