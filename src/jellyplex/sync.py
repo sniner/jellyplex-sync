@@ -31,6 +31,31 @@ class LibraryStats:
     items_removed: int = 0
 
 
+def resolve_movie_folder(source_lib: MediaLibrary, partial_path: str) -> Optional[pathlib.Path]:
+    """Resolves a partial path to a valid folder in the source library."""
+    path = pathlib.Path(partial_path)
+
+    # If path exists and is absolute or relative to cwd
+    if path.exists() and path.is_dir():
+        # Check if it is inside source_lib
+        try:
+            # This checks if path is subpath of source_lib.base_dir
+            # We resolve to handle symlinks or relative paths
+            if source_lib.base_dir.resolve() in path.resolve().parents or source_lib.base_dir.resolve() == path.resolve():
+                return path
+        except Exception:
+            pass
+
+    # Try matching by folder name
+    # This handles Docker path remapping
+    folder_name = path.name
+    candidate = source_lib.base_dir / folder_name
+    if candidate.exists() and candidate.is_dir():
+        return candidate
+
+    return None
+
+
 def scan_media_library(
     source: MediaLibrary,
     target: MediaLibrary,
@@ -430,6 +455,7 @@ def sync(
     debug: bool = False,
     convert_to: Optional[str] = None,
     update_filenames: bool = False,
+    partial_path: Optional[str] = None,
 ) -> int:
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -480,22 +506,48 @@ def sync(
     stat_items_removed: int = 0
     lib_stats = LibraryStats()
 
-    for src, _, movie in scan_media_library(source_lib, target_lib, delete=delete, dry_run=dry_run, stats=lib_stats):
-        s = process_movie(
-            source_lib,
-            target_lib,
-            src,
-            movie,
-            delete=delete,
-            verbose=verbose,
-            dry_run=dry_run,
-            update_filenames=update_filenames,
-        )
-        stat_movies += 1
-        stat_items_linked += s.asset_items_linked + s.videos_linked
-        stat_items_removed += s.asset_items_removed + s.items_removed
+    if partial_path:
+        # Partial sync logic
+        movie_folder = resolve_movie_folder(source_lib, partial_path)
+        if not movie_folder:
+            log.error(f"Could not resolve movie folder for partial path: {partial_path}")
+            return 1
 
-    stat_items_removed += lib_stats.items_removed
+        movie_info = source_lib.parse_movie_path(movie_folder)
+        if not movie_info:
+            log.warning(f"Could not parse movie info from folder: {movie_folder}")
+            # We skip this as we cannot process it without parsed info
+        else:
+            s = process_movie(
+                source_lib,
+                target_lib,
+                movie_folder,
+                movie_info,
+                delete=delete,
+                verbose=verbose,
+                dry_run=dry_run,
+                update_filenames=update_filenames,
+            )
+            stat_movies += 1
+            stat_items_linked += s.asset_items_linked + s.videos_linked
+            stat_items_removed += s.asset_items_removed + s.items_removed
+    else:
+        for src, _, movie in scan_media_library(source_lib, target_lib, delete=delete, dry_run=dry_run, stats=lib_stats):
+            s = process_movie(
+                source_lib,
+                target_lib,
+                src,
+                movie,
+                delete=delete,
+                verbose=verbose,
+                dry_run=dry_run,
+                update_filenames=update_filenames,
+            )
+            stat_movies += 1
+            stat_items_linked += s.asset_items_linked + s.videos_linked
+            stat_items_removed += s.asset_items_removed + s.items_removed
+
+        stat_items_removed += lib_stats.items_removed
 
     summary = (
         f"Summary: {stat_movies} movies found, "

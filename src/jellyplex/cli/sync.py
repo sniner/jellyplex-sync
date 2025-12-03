@@ -21,6 +21,11 @@ def main() -> None:
     parser.add_argument("--verbose", action="store_true", help="Show more information messages")
     parser.add_argument("--debug", action="store_true", help="Show debug messages")
     parser.add_argument("--update-filenames", action="store_true", help="Rename existing hardlinks if they have outdated names")
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--partial", help="Sync only the specified movie folder path")
+    group.add_argument("--radarr-hook", action="store_true", help="Read movie path from Radarr environment variables")
+
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -28,6 +33,28 @@ def main() -> None:
         stream=sys.stderr,
         format="%(levelname)s: %(asctime)s -- %(message)s",
     )
+
+    partial_path = args.partial
+
+    if args.radarr_hook:
+        import os
+        event_type = os.environ.get("radarr_eventtype")
+        if event_type == "Test":
+            logging.info("Radarr connection test successful")
+            sys.exit(0)
+
+        if event_type not in ["Download", "Upgrade", "Rename"]:
+            logging.info(f"Ignoring Radarr event type: {event_type}")
+            sys.exit(0)
+
+        radarr_path = os.environ.get("radarr_movie_path")
+        if not radarr_path:
+            logging.error("radarr_movie_path environment variable not set")
+            sys.exit(1)
+
+        movie_title = os.environ.get("radarr_movie_title", "Unknown")
+        logging.info(f"Radarr hook triggered for movie: {movie_title}")
+        partial_path = radarr_path
 
     result = 0
     try:
@@ -41,6 +68,7 @@ def main() -> None:
             debug=args.debug,
             convert_to=args.convert_to,
             update_filenames=args.update_filenames,
+            partial_path=partial_path,
         )
     except KeyboardInterrupt:
         logging.info("INTERRUPTED")
