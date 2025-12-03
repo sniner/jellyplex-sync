@@ -44,7 +44,7 @@ def resolve_movie_folder(source_lib: MediaLibrary, partial_path: str) -> Optiona
             if source_lib.base_dir.resolve() in path.resolve().parents or source_lib.base_dir.resolve() == path.resolve():
                 return path
         except Exception:
-            pass
+            log.exception("Failed to resolve movie folder path")
 
     # Try matching by folder name
     # This handles Docker path remapping
