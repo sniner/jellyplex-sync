@@ -120,6 +120,48 @@ Verbose output with full debug information:
 jellyplex-sync --verbose --debug --delete --create ~/Media/Jellyfin ~/Media/Plex
 ```
 
+## Partial Sync & Radarr Hook
+
+You can sync a single movie folder instead of scanning the entire library. This is significantly faster for updates triggered by media management tools like Radarr.
+
+### Manual Partial Sync
+
+Use the `--partial` argument to specify the folder name (relative to the source library root) or absolute path of the movie to sync:
+
+```bash
+jellyplex-sync --partial "Movie (2021)" /media/jellyfin /media/plex
+# OR
+jellyplex-sync --partial "/media/jellyfin/Movie (2021)" /media/jellyfin /media/plex
+```
+
+> **Note**: Partial sync disables global library cleanup. The `--delete` flag will only remove stray files *within the synced movie folder*.
+
+### Radarr Integration
+
+You can trigger a partial sync automatically when Radarr imports, upgrades, or renames a movie.
+
+1.  **Go to Radarr Settings > Connect**.
+2.  Add a new **Custom Script** notification (if running locally) or **Webhook** (if triggering remotely/via container).
+    *   *For a Custom Script (local)*: Point to a wrapper script that runs `jellyplex-sync --radarr-hook ...`.
+    *   *For a Webhook (remote)*: If you are wrapping `jellyplex-sync` in a small web service, configure the URL.
+3.  **Enable on**: Download, Upgrade, Rename.
+4.  **Environment Variables**: `jellyplex-sync` automatically reads the following environment variables set by Radarr:
+    *   `radarr_eventtype`: The type of event (e.g., Download, Upgrade).
+    *   `radarr_movie_path`: The full path to the movie folder.
+    *   `radarr_movie_title`: The movie title (used for logging).
+
+**Example Docker/CI Usage**:
+If you are running `jellyplex-sync` in a container that has access to the same media volumes as Radarr:
+
+```bash
+# This command typically runs inside a script triggered by Radarr
+# Ensure the container has the 'radarr_*' environment variables passed to it
+jellyplex-sync --radarr-hook /mnt/source /mnt/target
+```
+
+**Path Mapping**:
+If Radarr runs in a Docker container with different volume mappings than `jellyplex-sync` (e.g., Radarr sees `/movies/Avatar` but Sync sees `/mnt/media/movies/Avatar`), the tool will attempt to resolve the path by matching the folder name (`Avatar`) within the source library.
+
 ## Behavior
 
 * **Hard links**: Video files are linked, not copied. This preserves disk space and ensures both libraries reflect the same physical files.
