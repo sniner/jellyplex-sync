@@ -10,6 +10,7 @@ log = logging.getLogger(__name__)
 
 
 ACCEPTED_VIDEO_SUFFIXES = {".mkv", ".m4v", ".mp4", ".avi", ".mov", ".wmv", ".ts", ".webm"}
+ACCEPTED_ASSOCIATED_SUFFIXES = {".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".edl", ".nfo"}
 RESOLUTION_PATTERN = re.compile(r"\d{3,4}[pi]$")
 
 
