@@ -10,8 +10,8 @@
 #
 # Race Condition Prevention:
 #   - Uses flock on the cron lock to prevent concurrent cron executions
-#   - Uses flock on queue file itself during atomic move to prevent Radarr
-#     writing during the critical section
+#   - Uses flock on a shared lock file (QUEUE_LOCK_FILE) during atomic move to coordinate with Radarr
+#     and prevent Radarr writing during the critical section
 #   - Atomic mv operation ensures queue is fully moved before processing
 #
 
