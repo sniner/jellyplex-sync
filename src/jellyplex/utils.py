@@ -2,7 +2,6 @@ import errno
 import logging
 import pathlib
 import shutil
-from typing import Optional
 
 
 log = logging.getLogger(__name__)
@@ -39,7 +38,7 @@ def remove(item: pathlib.Path) -> bool:
         return False
 
 
-def common_path(p1: pathlib.Path, p2: pathlib.Path) -> Optional[pathlib.Path]:
+def common_path(p1: pathlib.Path, p2: pathlib.Path) -> pathlib.Path | None:
     parts1 = p1.resolve().parts
     parts2 = p2.resolve().parts
     common = []

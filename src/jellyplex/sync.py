@@ -3,8 +3,9 @@ import logging
 import os
 import pathlib
 import re
+from collections.abc import Generator
 from dataclasses import dataclass
-from typing import Dict, Generator, List, Optional, Set, Tuple, Type
+import glob as pyglob
 
 from .library import (
     ACCEPTED_ASSOCIATED_SUFFIXES,
@@ -19,7 +20,6 @@ from .jellyfin import (
 from .plex import (
     PlexLibrary,
 )
-import glob as pyglob
 from . import utils
 
 log = logging.getLogger(__name__)
@@ -95,7 +95,7 @@ class LibraryStats:
     items_removed: int = 0
 
 
-def resolve_movie_folder(source_lib: MediaLibrary, partial_path: str) -> Optional[pathlib.Path]:
+def resolve_movie_folder(source_lib: MediaLibrary, partial_path: str) -> pathlib.Path | None:
     """Resolves a partial path to a valid folder in the source library."""
     if not partial_path:
         return None
@@ -128,8 +128,8 @@ def scan_media_library(
     *,
     dry_run: bool = False,
     delete: bool = False,
-    stats: Optional[LibraryStats] = None,
-) -> Generator[Tuple[pathlib.Path, pathlib.Path, MovieInfo], None, None]:
+    stats: LibraryStats | None = None,
+) -> Generator[tuple[pathlib.Path, pathlib.Path, MovieInfo], None, None]:
     """Iterate over the source library and determine all movie folders.
     Yields a tuple for each movie folder:
         (source: pathlib.Path, destination: pathlib.Path, movie: MovieInfo)
@@ -138,8 +138,8 @@ def scan_media_library(
         raise ValueError("Can not transfer library into itself")
 
     stats = stats or LibraryStats()
-    movies_to_sync: Dict[str, Optional[Tuple[pathlib.Path, MovieInfo]]] = {}
-    conflicting_source_dirs: Dict[str, List[str]] = {}
+    movies_to_sync: dict[str, tuple[pathlib.Path, MovieInfo] | None] = {}
+    conflicting_source_dirs: dict[str, list[str]] = {}
 
     # Inspect source libary for movie folders to sync
     for entry, movie in source.scan():
@@ -198,7 +198,7 @@ def process_assets_folder(
     dry_run: bool = False,
     delete: bool = False,
     verbose: bool = False,
-    stats: Optional[AssetStats] = None,
+    stats: AssetStats | None = None,
 ) -> AssetStats:
     if not source_path.is_dir():
         raise ValueError(f"{source_path!s} is not a folder")
@@ -298,8 +298,8 @@ def process_movie(
 
     stats = MovieStats()
 
-    videos_to_sync: Dict[str, Tuple[pathlib.Path, pathlib.Path]] = {}
-    assets_to_sync: Dict[str, Tuple[pathlib.Path, pathlib.Path]] = {}
+    videos_to_sync: dict[str, tuple[pathlib.Path, pathlib.Path]] = {}
+    assets_to_sync: dict[str, tuple[pathlib.Path, pathlib.Path]] = {}
 
     # Scan for video files and assets using os.scandir for efficiency
     try:
@@ -366,9 +366,9 @@ def process_movie(
 
     # Pre-scan target directory to build a map of existing inodes
     # This optimizes stale candidate detection by avoiding repeated directory scans
-    existing_inodes: Dict[int, pathlib.Path] = {}
+    existing_inodes: dict[int, pathlib.Path] = {}
     # Track stale files that should be preserved (not renamed but still valid hardlinks)
-    preserved_stale_files: Set[str] = set()
+    preserved_stale_files: set[str] = set()
 
     if target_path.exists():
         for candidate in target_path.iterdir():
@@ -398,7 +398,7 @@ def process_movie(
         else:
             # Check if any existing file in the target folder is a hardlink to the source file
             # This happens if the filename has changed (e.g. edition added)
-            stale_candidate: Optional[pathlib.Path] = None
+            stale_candidate: pathlib.Path | None = None
             try:
                 source_inode = item[0].stat().st_ino
                 if source_inode in existing_inodes:
@@ -582,7 +582,7 @@ def _scan_for_video_files(path: pathlib.Path, max_files: int = 100) -> Generator
             continue
 
 
-def determine_library_type(path: pathlib.Path) -> Optional[Type[MediaLibrary]]:
+def determine_library_type(path: pathlib.Path) -> type[MediaLibrary] | None:
     """Determine library type by sampling video files.
 
     Uses efficient os.scandir-based traversal instead of rglob to avoid
@@ -626,9 +626,9 @@ def sync(
     create: bool = False,
     verbose: bool = False,
     debug: bool = False,
-    convert_to: Optional[str] = None,
+    convert_to: str | None = None,
     update_filenames: bool = False,
-    partial_path: Optional[str] = None,
+    partial_path: str | None = None,
 ) -> int:
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)

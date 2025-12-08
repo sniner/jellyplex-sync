@@ -1,7 +1,7 @@
 import logging
 import pathlib
 import re
-from typing import Generator, Optional, Set, Tuple
+from collections.abc import Generator
 
 from .library import (
     RESOLUTION_PATTERN,
@@ -52,17 +52,17 @@ class PlexLibrary(MediaLibrary):
             parts.append(f"[{video.resolution}]")
         return f"{' '.join(parts)}{video.extension}"
 
-    def _parse_meta_blocks(self, name: str) -> Generator[Tuple[str, str, str], None, None]:
+    def _parse_meta_blocks(self, name: str) -> Generator[tuple[str, str, str], None, None]:
         # Find all '{KEY-VALUE}' instances
         for blk, key, val in PLEX_META_BLOCK_PATTERN.findall(name):
             yield key, val, blk
 
-    def _parse_info_blocks(self, name: str) -> Generator[Tuple[str, str], None, None]:
+    def _parse_info_blocks(self, name: str) -> Generator[tuple[str, str], None, None]:
         # Find all '[METADATA]' instances
         for blk, info in PLEX_META_INFO_PATTERN.findall(name):
             yield info, blk
 
-    def parse_movie_path(self, path: pathlib.Path) -> Optional[MovieInfo]:
+    def parse_movie_path(self, path: pathlib.Path) -> MovieInfo | None:
         name = path.name
 
         # Find metadata provider and movie id
@@ -102,13 +102,13 @@ class PlexLibrary(MediaLibrary):
         else:
             return None
 
-    def parse_video_path(self, path: pathlib.Path) -> Optional[VideoInfo]:
+    def parse_video_path(self, path: pathlib.Path) -> VideoInfo | None:
         name = path.stem
         leftover = name
 
         # Find edition and providers
-        edition: Optional[str] = None
-        providers: Set[str] = set()
+        edition: str | None = None
+        providers: set[str] = set()
         for key, val, blk in self._parse_meta_blocks(name):
             if key.lower() == "edition":
                 edition = val
@@ -117,8 +117,8 @@ class PlexLibrary(MediaLibrary):
             leftover = leftover.replace(blk, "")
 
         # Find additional metadata
-        tags: Set[str] = set()
-        resolution: Optional[str] = None
+        tags: set[str] = set()
+        resolution: str | None = None
         for info, blk in self._parse_info_blocks(leftover):
             tag = info.strip()
             if RESOLUTION_PATTERN.match(tag):

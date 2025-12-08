@@ -3,7 +3,6 @@
 import argparse
 import logging
 import os
-import pathlib
 import sys
 
 import jellyplex as jp

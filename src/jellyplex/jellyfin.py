@@ -2,8 +2,8 @@ import logging
 import pathlib
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Set, Tuple, Union
 
 from .library import (
     RESOLUTION_PATTERN,
@@ -54,7 +54,7 @@ class SimpleVariantParser(VariantParser):
             providers=video.providers,
         )
 
-    def _tags_to_variant(self, video: VideoInfo) -> List[str]:
+    def _tags_to_variant(self, video: VideoInfo) -> list[str]:
         if video.resolution:
             return [video.resolution]
         for tag in video.tags or []:
@@ -62,7 +62,7 @@ class SimpleVariantParser(VariantParser):
                 return [tag.upper()]
         return []
 
-    def _providers_to_jellyfin(self, video: VideoInfo, movie_name: str) -> List[str]:
+    def _providers_to_jellyfin(self, video: VideoInfo, movie_name: str) -> list[str]:
         """Convert provider tags from Plex format to Jellyfin format.
 
         Args:
@@ -110,18 +110,18 @@ class SimpleVariantParser(VariantParser):
 @dataclass
 class ResParser:
     pattern: re.Pattern
-    mapping: Union[Callable[[re.Match[str]], List[Union[str, None]]], List[Union[str, None]]]
+    mapping: Callable[[re.Match[str]], list[str | None]] | list[str | None]
 
 class SninerVariantParser(SimpleVariantParser):
-    RES_MAP: List[ResParser] = [
+    RES_MAP: list[ResParser] = [
         ResParser(re.compile(r"4k([\.\-]([\w\d]+))?$"), lambda m: ["2160p", m.group(2)] if m.group(1) else ["2160p"]),
         ResParser(re.compile(r"BD([\.\-]([\w\d]+))?$"), lambda m: ["1080p", m.group(2)] if m.group(1) else ["1080p"]),
         ResParser(re.compile(r"DVD([\.\-]([\w\d]+))?$"), lambda m: [None, "DVD", m.group(2)] if m.group(1) else [None, "DVD"]),
         ResParser(RESOLUTION_PATTERN, lambda m: [m.group(0)]),
     ]
 
-    def _match_resolution(self, word: str) -> Tuple[Optional[str], Set[str]]:
-        tags: List[Union[str, None]] = []
+    def _match_resolution(self, word: str) -> tuple[str | None, set[str]]:
+        tags: list[str | None] = []
         for mapper in self.RES_MAP:
             match = mapper.pattern.match(word)
             if match:
@@ -134,7 +134,7 @@ class SninerVariantParser(SimpleVariantParser):
         return tags[0] if tags else None, set(t for t in tags[1:] if t)
 
     def parse(self, variant: str, video: VideoInfo) -> VideoInfo:
-        edition: Optional[str] = None
+        edition: str | None = None
 
         variant_parts = variant.split(" ")
 
@@ -160,7 +160,7 @@ class SninerVariantParser(SimpleVariantParser):
             providers=video.providers,
         )
 
-    def _tags_to_variant(self, video: VideoInfo) -> List[str]:
+    def _tags_to_variant(self, video: VideoInfo) -> list[str]:
         variant = super()._tags_to_variant(video)
         if variant:
             m = re.match(r"(\d{3,4})[pi]$", variant[0], flags=re.IGNORECASE)
@@ -176,7 +176,7 @@ class SninerVariantParser(SimpleVariantParser):
 
 
 class JellyfinLibrary(MediaLibrary):
-    def __init__(self, base_dir: pathlib.Path, *, variant_parser: Optional[Type[VariantParser]] = None):
+    def __init__(self, base_dir: pathlib.Path, *, variant_parser: type[VariantParser] | None = None):
         super().__init__(base_dir)
         self.variant_parser = variant_parser(self) if variant_parser else SninerVariantParser(self)
 
@@ -184,7 +184,7 @@ class JellyfinLibrary(MediaLibrary):
     def shortname(cls) -> str:
         return "jellyfin"
 
-    def parse_movie_path(self, path: pathlib.Path) -> Optional[MovieInfo]:
+    def parse_movie_path(self, path: pathlib.Path) -> MovieInfo | None:
         name = path.name
         for regex in JELLYFIN_MOVIE_PATTERNS:
             match = regex.match(name)
@@ -213,7 +213,7 @@ class JellyfinLibrary(MediaLibrary):
             video
         )
 
-    def parse_video_path(self, path: pathlib.Path) -> Optional[VideoInfo]:
+    def parse_video_path(self, path: pathlib.Path) -> VideoInfo | None:
         base_name = path.stem
         video = VideoInfo(extension=path.suffix)
         parts = base_name.split(" - ")  # <spc><dash><spc> is required by Jellyfin for variants

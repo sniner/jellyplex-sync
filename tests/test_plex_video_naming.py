@@ -216,11 +216,11 @@ def test_parse_sane_plex_video_path(plib: jp.MediaLibrary, path, expected):
     assert result == expected, f"Failed on path: {path}"
 
 @pytest.mark.parametrize("path,expected", NOT_RECOMMENDED_SAMPLES, ids=[str(p) for p, _ in NOT_RECOMMENDED_SAMPLES])
-def test_parse_not_recommended_plex_video_path(plib, path, expected):
+def test_parse_not_recommended_plex_video_path(plib: jp.MediaLibrary, path, expected):
     result = plib.parse_video_path(path)
     assert result == expected, f"Failed on path: {path}"
 
 @pytest.mark.parametrize("path,expected", NOT_WORKING_SAMPLES, ids=[str(p) for p, _ in NOT_WORKING_SAMPLES])
-def test_parse_bad_plex_video_path(plib, path, expected):
+def test_parse_bad_plex_video_path(plib: jp.MediaLibrary, path, expected):
     result = plib.parse_video_path(path)
     assert result == expected, f"Failed on path: {path}"

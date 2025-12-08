@@ -153,11 +153,11 @@ def test_parse_sane_jellyfin_video_path(jlib: jp.MediaLibrary, path, expected):
     assert result == expected, f"Failed on path: {path}"
 
 @pytest.mark.parametrize("path,expected", NOT_RECOMMENDED_SAMPLES, ids=[str(p) for p, _ in NOT_RECOMMENDED_SAMPLES])
-def test_parse_not_recommended_jellyfin_video_path(jlib, path, expected):
+def test_parse_not_recommended_jellyfin_video_path(jlib: jp.MediaLibrary, path, expected):
     result = jlib.parse_video_path(path)
     assert result == expected, f"Failed on path: {path}"
 
 @pytest.mark.parametrize("path,expected", NOT_WORKING_SAMPLES, ids=[str(p) for p, _ in NOT_WORKING_SAMPLES])
-def test_parse_bad_jellyfin_video_path(jlib, path, expected):
+def test_parse_bad_jellyfin_video_path(jlib: jp.MediaLibrary, path, expected):
     result = jlib.parse_video_path(path)
     assert result == expected, f"Failed on path: {path}"

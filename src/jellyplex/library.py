@@ -3,8 +3,8 @@ import os
 import pathlib
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Generator
 from dataclasses import dataclass
-from typing import Generator, Optional, Set, Tuple
 
 
 log = logging.getLogger(__name__)
@@ -19,19 +19,19 @@ RESOLUTION_PATTERN = re.compile(r"\d{3,4}[pi]$")
 class MovieInfo:
     """Metadata for the whole movie"""
     title: str
-    year: Optional[str] = None
-    provider: Optional[str] = None
-    movie_id: Optional[str] = None
+    year: str | None = None
+    provider: str | None = None
+    movie_id: str | None = None
 
 
 @dataclass
 class VideoInfo:
     """Metadata for a single video file"""
     extension: str
-    edition: Optional[str] = None
-    resolution: Optional[str] = None
-    tags: Optional[Set[str]] = None
-    providers: Optional[Set[str]] = None
+    edition: str | None = None
+    resolution: str | None = None
+    tags: set[str] | None = None
+    providers: set[str] | None = None
 
 
 class MediaLibrary(ABC):
@@ -58,14 +58,14 @@ class MediaLibrary(ABC):
         return self.movie_path(movie) / self.video_name(movie, video)
 
     @abstractmethod
-    def parse_movie_path(self, path: pathlib.Path) -> Optional[MovieInfo]:
+    def parse_movie_path(self, path: pathlib.Path) -> MovieInfo | None:
         ...
 
     @abstractmethod
-    def parse_video_path(self, path: pathlib.Path) -> Optional[VideoInfo]:
+    def parse_video_path(self, path: pathlib.Path) -> VideoInfo | None:
         ...
 
-    def scan(self) -> Generator[Tuple[pathlib.Path, MovieInfo], None, None]:
+    def scan(self) -> Generator[tuple[pathlib.Path, MovieInfo], None, None]:
         """Scan library for movie folders using efficient os.scandir."""
         try:
             with os.scandir(self.base_dir) as entries:
