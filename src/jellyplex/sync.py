@@ -249,7 +249,7 @@ def process_assets_folder(
             else:
                 if dry_run:
                     log.info("LINK   %s", dest)
-                    stats.files_linked += 1
+                    # Do not increment stats.files_linked in dry-run mode
                 elif safe_hardlink(entry, dest):
                     stats.files_linked += 1
             stats.files_total += 1
