@@ -46,9 +46,12 @@ By default, the script writes to `/Cumflix/.jellyplex-queue`. If your Radarr use
 | :--- | :--- | :--- | :--- |
 | `QUEUE_DIR` | Hook | Directory for queue file (Radarr path) | `/Cumflix` |
 | `QUEUE_FILE` | Cron | Path to queue file (Host path) | `/mnt/user/Media/.jellyplex-queue` |
+| `QUEUE_LOCK_FILE` | Both | Shared lock file for race condition prevention | `/tmp/jellyplex-queue.lock` |
 | `MOUNT_SOURCE` | Cron | Host media path to mount in Docker | `/mnt/user/Media` |
 | `JELLYFIN_URL` | Cron | Jellyfin URL | `http://localhost:8096` (Use HTTPS in production) |
 | `JELLYFIN_API_KEY` | Cron | API Key for notifications | **(Set via Environment Variable)** |
+
+**Note:** The `QUEUE_LOCK_FILE` must be accessible by both the Radarr container and the host. If Radarr runs in a container with limited access to `/tmp`, you may need to configure this to a shared path (e.g., `${QUEUE_DIR}/.jellyplex-queue.lock`).
 
 ## Troubleshooting
 

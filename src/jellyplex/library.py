@@ -1,4 +1,5 @@
 import logging
+import os
 import pathlib
 import re
 from abc import ABC, abstractmethod
@@ -65,13 +66,23 @@ class MediaLibrary(ABC):
         ...
 
     def scan(self) -> Generator[Tuple[pathlib.Path, MovieInfo], None, None]:
-        for entry in self.base_dir.glob("*"):
-            if not entry.is_dir():
-                continue
+        """Scan library for movie folders using efficient os.scandir."""
+        try:
+            with os.scandir(self.base_dir) as entries:
+                for entry in entries:
+                    try:
+                        # Use cached is_dir from DirEntry (avoids extra stat call)
+                        if not entry.is_dir(follow_symlinks=False):
+                            continue
+                    except OSError:
+                        continue
 
-            movie = self.parse_movie_path(entry)
-            if not movie:
-                log.warning("Ignoring folder with unparsable name: %s", entry.name)
-                continue
+                    entry_path = pathlib.Path(entry.path)
+                    movie = self.parse_movie_path(entry_path)
+                    if not movie:
+                        log.warning("Ignoring folder with unparsable name: %s", entry.name)
+                        continue
 
-            yield entry, movie
+                    yield entry_path, movie
+        except OSError as e:
+            log.error("Failed to scan library directory '%s': %s", self.base_dir, e)

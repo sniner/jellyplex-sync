@@ -6,6 +6,12 @@
 # Writes the movie path to a queue file which is processed by a cron job.
 # This avoids mounting the Docker socket in Radarr and handles batching efficiently.
 #
+# Race Condition Prevention:
+#   - Uses flock on a shared lock file to coordinate with the cron job
+#   - Atomic append ensures partial writes don't corrupt the queue
+#
+
+set -euo pipefail
 
 # ==============================================================================
 # CONFIGURATION
@@ -16,6 +22,8 @@
 # Typically a shared media folder.
 QUEUE_DIR="${QUEUE_DIR:-/Cumflix}"
 QUEUE_FILE="${QUEUE_DIR}/.jellyplex-queue"
+# Lock file shared with cron script - must be accessible by both processes
+QUEUE_LOCK_FILE="${QUEUE_LOCK_FILE:-/tmp/jellyplex-queue.lock}"
 
 LOG_FILE="${LOG_FILE:-/config/logs/jellyplex-hook.log}"
 
@@ -48,11 +56,14 @@ fi
 
 log "Queuing movie: ${radarr_movie_title} (${radarr_eventtype})"
 
-# Atomic write to queue file
+# Atomic write to queue file using shared lock
+# This coordinates with the cron job to prevent race conditions during queue move
 (
     flock -x 200
+    # Ensure queue directory exists
+    mkdir -p "$QUEUE_DIR"
     echo "${radarr_movie_path}" >> "$QUEUE_FILE"
-) 200>"/tmp/jellyplex-queue.lock"
+) 200>"$QUEUE_LOCK_FILE"
 
 log "Added to queue: ${radarr_movie_path}"
 exit 0
