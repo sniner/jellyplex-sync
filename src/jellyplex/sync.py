@@ -1,4 +1,6 @@
+import errno
 import logging
+import os
 import pathlib
 import re
 from dataclasses import dataclass
@@ -22,6 +24,68 @@ from . import utils
 
 log = logging.getLogger(__name__)
 
+
+# Minimum number of items expected in source library to proceed with --delete
+# Protects against wiping target when source mount fails
+MIN_SOURCE_ITEMS_FOR_DELETE = 1
+
+
+def is_source_empty_or_unmounted(source_path: pathlib.Path) -> bool:
+    """Check if source directory appears empty or unmounted.
+
+    This safeguard prevents accidental deletion of target content when the source
+    filesystem is not properly mounted (e.g., NFS/CIFS mount failure).
+
+    Returns True if the source directory:
+    - Contains no subdirectories at all
+    - Is completely empty
+    """
+    try:
+        # Use os.scandir for efficient directory scanning (avoids stat calls)
+        with os.scandir(source_path) as entries:
+            dir_count = 0
+            for entry in entries:
+                # Only count directories (movie folders)
+                if entry.is_dir(follow_symlinks=False):
+                    dir_count += 1
+                    if dir_count >= MIN_SOURCE_ITEMS_FOR_DELETE:
+                        return False
+            return dir_count == 0
+    except OSError as e:
+        # Permission denied or other access errors suggest mount issues
+        log.error("Cannot access source directory '%s': %s", source_path, e)
+        return True
+
+
+def safe_hardlink(source: pathlib.Path, target: pathlib.Path) -> bool:
+    """Create a hardlink with proper error handling.
+
+    Returns True on success, False on failure.
+    Handles cross-device links (EXDEV) and permission errors (EACCES) gracefully.
+    """
+    try:
+        target.hardlink_to(source)
+        return True
+    except OSError as e:
+        if e.errno == errno.EXDEV:
+            log.error(
+                "Cannot hardlink '%s' -> '%s': Cross-device link. "
+                "Source and target must be on the same filesystem.",
+                source, target
+            )
+        elif e.errno == errno.EACCES:
+            log.error(
+                "Permission denied creating hardlink '%s' -> '%s'. "
+                "Check file permissions and ownership.",
+                source, target
+            )
+        elif e.errno == errno.EEXIST:
+            log.warning("Target file already exists: '%s'", target)
+        elif e.errno == errno.ENOENT:
+            log.error("Source file not found: '%s'", source)
+        else:
+            log.error("Failed to create hardlink '%s' -> '%s': %s", source, target, e)
+        return False
 
 
 @dataclass
@@ -150,27 +214,44 @@ def process_assets_folder(
 
     # Hardlink missing files and dive into subfolders
     for entry in source_path.iterdir():
+        # Skip symlinks to avoid unexpected behavior
+        if entry.is_symlink():
+            log.debug("Skipping symlink '%s'", entry.name)
+            continue
+
         dest = target_path / entry.name
         if entry.is_dir():
-            process_assets_folder(entry, dest, verbose=verbose, stats=stats, dry_run=dry_run)
+            process_assets_folder(entry, dest, verbose=verbose, stats=stats, dry_run=dry_run, delete=delete)
         elif entry.is_file():
+            # Skip zero-byte files (likely placeholders or corrupt)
+            try:
+                if entry.stat().st_size == 0:
+                    log.debug("Skipping zero-byte file '%s'", entry.name)
+                    continue
+            except OSError:
+                continue
+
             if dest.exists():
-                if dest.samefile(entry):
-                    if verbose:
-                        log.debug("Target file '%s' already exists, skipping", entry.name)
-                else:
-                    if dry_run:
-                        log.info("RELINK %s", entry)
+                try:
+                    if dest.samefile(entry):
+                        if verbose:
+                            log.debug("Target file '%s' already exists, skipping", entry.name)
                     else:
-                        dest.unlink()
-                        dest.hardlink_to(entry)
-                    stats.files_linked += 1
+                        if dry_run:
+                            log.info("RELINK %s", entry)
+                        else:
+                            dest.unlink()
+                            if safe_hardlink(entry, dest):
+                                stats.files_linked += 1
+                except OSError as e:
+                    log.warning("Cannot check file '%s': %s", dest, e)
+                    continue
             else:
                 if dry_run:
                     log.info("LINK   %s", dest)
-                else:
-                    dest.hardlink_to(entry)
-                stats.files_linked += 1
+                    # Do not increment stats.files_linked in dry-run mode
+                elif safe_hardlink(entry, dest):
+                    stats.files_linked += 1
             stats.files_total += 1
         synced_items[entry.name] = dest
 
@@ -220,9 +301,22 @@ def process_movie(
     videos_to_sync: Dict[str, Tuple[pathlib.Path, pathlib.Path]] = {}
     assets_to_sync: Dict[str, Tuple[pathlib.Path, pathlib.Path]] = {}
 
-    # Scan for video files and assets
-    for entry in source_path.glob("*"):
-        if entry.is_file() and entry.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
+    # Scan for video files and assets using os.scandir for efficiency
+    try:
+        entries_list = list(os.scandir(source_path))
+    except OSError as e:
+        log.error("Failed to scan movie folder '%s': %s", source_path, e)
+        return MovieStats()
+
+    for dir_entry in entries_list:
+        try:
+            entry = pathlib.Path(dir_entry.path)
+            is_file = dir_entry.is_file(follow_symlinks=False)
+            is_dir = dir_entry.is_dir(follow_symlinks=False)
+        except OSError:
+            continue
+
+        if is_file and entry.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
             video = source.parse_video_path(entry)
             video_path = target.video_path(movie, video or VideoInfo(extension=entry.suffix.lower()))
             video_name = video_path.name
@@ -256,11 +350,11 @@ def process_movie(
 
                 assets_to_sync[target_associated_name] = (associated_entry, target_associated_path)
 
-        elif entry.is_dir():
+        elif is_dir:
             dir_name = entry.name
-            # TODO: Just a quick fix for selecting and manipulating directories
+            # Skip hidden directories and symlinks
             if dir_name.startswith("."):
-                log.debug("Ignoring asset folder '%s'", dir_name)
+                log.debug("Ignoring hidden folder '%s'", dir_name)
                 continue
             assets_to_sync[dir_name] = (entry, target_path / dir_name)
 
@@ -273,6 +367,9 @@ def process_movie(
     # Pre-scan target directory to build a map of existing inodes
     # This optimizes stale candidate detection by avoiding repeated directory scans
     existing_inodes: Dict[int, pathlib.Path] = {}
+    # Track stale files that should be preserved (not renamed but still valid hardlinks)
+    preserved_stale_files: Set[str] = set()
+
     if target_path.exists():
         for candidate in target_path.iterdir():
             if not candidate.is_file():
@@ -366,19 +463,32 @@ def process_movie(
                         continue
                     else:
                         log.warning("Stale hardlink '%s' should be '%s'. Use --update-filenames to fix.", stale_candidate.name, item[1].name)
+                        # Preserve the stale file so it isn't deleted during cleanup
+                        # (it's still a valid hardlink to the source, just with wrong name)
+                        preserved_stale_files.add(stale_candidate.name)
+                        # Also preserve any associated files with the stale name
+                        stale_stem = stale_candidate.stem
+                        for assoc in target_path.iterdir():
+                            if assoc.is_file() and assoc.name.startswith(stale_stem + "."):
+                                if assoc.suffix.lower() in ACCEPTED_ASSOCIATED_SUFFIXES:
+                                    preserved_stale_files.add(assoc.name)
                         continue
 
         if dry_run:
             log.info("LINK   %s", item[1])
+            stats.videos_linked += 1
         else:
             log.info("Linking video file '%s' → '%s'", item[0].name, item[1].name)
-            item[1].hardlink_to(item[0])
-        stats.videos_linked += 1
+            if safe_hardlink(item[0], item[1]):
+                stats.videos_linked += 1
 
     if delete and target_path.is_dir():
-        # Remove stray items
+        # Remove stray items (but preserve stale files that are still valid hardlinks)
         for entry in target_path.iterdir():
             if entry.name in videos_to_sync or entry.name in assets_to_sync:
+                continue
+            # Don't delete preserved stale files (valid hardlinks with outdated names)
+            if entry.name in preserved_stale_files:
                 continue
             if dry_run:
                 log.info("DELETE %s", entry)
@@ -393,48 +503,102 @@ def process_movie(
 
     # Sync assets folders and associated files
     for _, item in assets_to_sync.items():
+        # Skip symlinks
+        if item[0].is_symlink():
+            log.debug("Skipping symlink '%s'", item[0].name)
+            continue
+
         if item[0].is_dir():
             s = process_assets_folder(item[0], item[1], delete=delete, verbose=verbose, dry_run=dry_run)
             stats.asset_items_total += s.files_total
             stats.asset_items_linked += s.files_linked
             stats.asset_items_removed += s.items_removed
         elif item[0].is_file():
+            # Skip zero-byte files
+            try:
+                if item[0].stat().st_size == 0:
+                    log.debug("Skipping zero-byte associated file '%s'", item[0].name)
+                    continue
+            except OSError:
+                continue
+
             # Handle associated files
             if item[1].exists():
-                if item[1].samefile(item[0]):
-                    if verbose:
-                        log.debug("Target asset file '%s' already exists, skipping", item[1].name)
-                else:
-                    if dry_run:
-                        log.info("RELINK %s", item[0])
+                try:
+                    if item[1].samefile(item[0]):
+                        if verbose:
+                            log.debug("Target asset file '%s' already exists, skipping", item[1].name)
                     else:
-                        item[1].unlink()
-                        item[1].hardlink_to(item[0])
-                    stats.asset_items_linked += 1
+                        if dry_run:
+                            log.info("RELINK %s", item[0])
+                            stats.asset_items_linked += 1
+                        else:
+                            item[1].unlink()
+                            if safe_hardlink(item[0], item[1]):
+                                stats.asset_items_linked += 1
+                except OSError as e:
+                    log.warning("Cannot check associated file '%s': %s", item[1], e)
+                    continue
             else:
                 if dry_run:
                     log.info("LINK   %s", item[1])
-                else:
-                    item[1].hardlink_to(item[0])
-                stats.asset_items_linked += 1
+                    stats.asset_items_linked += 1
+                elif safe_hardlink(item[0], item[1]):
+                    stats.asset_items_linked += 1
             stats.asset_items_total += 1
 
     return stats
 
 
+def _scan_for_video_files(path: pathlib.Path, max_files: int = 100) -> Generator[pathlib.Path, None, None]:
+    """Efficiently scan for video files using os.scandir to avoid unnecessary stat calls.
+
+    Limits scanning to max_files to prevent performance issues on large libraries.
+    Uses breadth-first traversal to sample from multiple movie folders.
+    """
+    files_found = 0
+    dirs_to_scan = [path]
+
+    while dirs_to_scan and files_found < max_files:
+        current_dir = dirs_to_scan.pop(0)
+        try:
+            with os.scandir(current_dir) as entries:
+                for entry in entries:
+                    if files_found >= max_files:
+                        return
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            dirs_to_scan.append(pathlib.Path(entry.path))
+                        elif entry.is_file(follow_symlinks=False):
+                            entry_path = pathlib.Path(entry.path)
+                            if entry_path.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
+                                yield entry_path
+                                files_found += 1
+                    except OSError:
+                        # Skip entries we can't access
+                        continue
+        except OSError:
+            # Skip directories we can't access
+            continue
+
+
 def determine_library_type(path: pathlib.Path) -> Optional[Type[MediaLibrary]]:
+    """Determine library type by sampling video files.
+
+    Uses efficient os.scandir-based traversal instead of rglob to avoid
+    stat calls on large libraries. Samples up to 100 files for detection.
+    """
     plex_hints: int = 0
     jellyfin_hints: int = 0
-    for entry in path.rglob("*"):
-        if entry.suffix.lower() not in ACCEPTED_VIDEO_SUFFIXES:
-            continue
+
+    for entry in _scan_for_video_files(path, max_files=100):
         fname = entry.stem
-        # Check for provider id
+        # Check for provider id - definitive markers
         if re.search(r"\[[a-z]+id-[^\]]+\]", fname, flags=re.IGNORECASE):
             return JellyfinLibrary
         if re.search(r"\{[a-z]+-[^\}]+\}", fname, flags=re.IGNORECASE):
             return PlexLibrary
-        # Check for Plex edition
+        # Check for Plex edition - definitive marker
         if re.search(r"\{edition-[^\}]+\}", fname, flags=re.IGNORECASE):
             return PlexLibrary
         # Check for hints
@@ -445,6 +609,7 @@ def determine_library_type(path: pathlib.Path) -> Optional[Type[MediaLibrary]]:
             plex_hints += 1
         if re.search(r"\[[a-z0-9\.\,]+\]", fname, flags=re.IGNORECASE):
             plex_hints += 1
+
     if plex_hints > jellyfin_hints:
         return PlexLibrary
     elif jellyfin_hints > plex_hints:
@@ -500,6 +665,17 @@ def sync(
 
     if not source_lib.base_dir.is_dir():
         log.error("Source directory '%s' does not exist", source_lib.base_dir)
+        return 1
+
+    # Safeguard: Check if source directory appears empty (possible mount failure)
+    # This prevents accidentally wiping the target when --delete is used
+    if delete and not partial_path and is_source_empty_or_unmounted(source_lib.base_dir):
+        log.error(
+            "Source directory '%s' appears empty or unmounted. "
+            "Aborting to prevent accidental deletion of target content. "
+            "Please verify the source filesystem is properly mounted.",
+            source_lib.base_dir
+        )
         return 1
 
     if not target_lib.base_dir.is_dir():

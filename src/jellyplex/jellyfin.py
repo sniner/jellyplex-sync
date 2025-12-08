@@ -3,10 +3,9 @@ import pathlib
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Callable, Dict, Generator, List, Optional, Set, Tuple, Type, Union
+from typing import Callable, List, Optional, Set, Tuple, Union
 
 from .library import (
-    ACCEPTED_VIDEO_SUFFIXES,
     RESOLUTION_PATTERN,
     MovieInfo,
     VideoInfo,
@@ -27,8 +26,12 @@ JELLYFIN_MOVIE_PATTERNS = [
 ]
 
 
-# FIXME: It's not only a parser for variant strings anymore ...
 class VariantParser(ABC):
+    """Abstract parser for video variant/edition strings.
+
+    Handles both parsing variant strings from filenames and generating
+    filenames from video metadata.
+    """
     def __init__(self, library: MediaLibrary):
         self.library = library
 

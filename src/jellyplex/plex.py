@@ -1,7 +1,7 @@
 import logging
 import pathlib
 import re
-from typing import Dict, Generator, List, Optional, Set, Tuple
+from typing import Generator, Optional, Set, Tuple
 
 from .library import (
     RESOLUTION_PATTERN,

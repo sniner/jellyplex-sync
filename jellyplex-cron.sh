@@ -8,6 +8,14 @@
 #
 # Schedule recommendation: */5 * * * * (Every 5 minutes)
 #
+# Race Condition Prevention:
+#   - Uses flock on the cron lock to prevent concurrent cron executions
+#   - Uses flock on a shared lock file (QUEUE_LOCK_FILE) during atomic move to coordinate with Radarr
+#     and prevent Radarr writing during the critical section
+#   - Atomic mv operation ensures queue is fully moved before processing
+#
+
+set -euo pipefail
 
 # ==============================================================================
 # CONFIGURATION
@@ -17,6 +25,8 @@
 # (Radarr sees this as /Cumflix/.jellyplex-queue due to container path mapping)
 QUEUE_FILE="${QUEUE_FILE:-/mnt/user/Media/.jellyplex-queue}"
 LOCK_FILE="/tmp/jellyplex-cron.lock"
+# Lock file shared with Radarr hook (must be accessible by both)
+QUEUE_LOCK_FILE="${QUEUE_LOCK_FILE:-/tmp/jellyplex-queue.lock}"
 LOG_FILE="${LOG_FILE:-/mnt/user/appdata/radarr/logs/jellyplex-sync.log}"
 
 # Docker Configuration
@@ -61,11 +71,15 @@ fi
 echo "[$(date)] === Starting Batch Sync ===" >> "$LOG_FILE"
 
 # Atomically move queue to processing file
+# Use the same lock file as the Radarr hook to prevent race conditions
 PROCESSING_FILE="${QUEUE_FILE}.processing"
 (
     flock -x 201
-    mv "$QUEUE_FILE" "$PROCESSING_FILE" 2>/dev/null
-) 201>"${LOCK_FILE}.queue"
+    # Double-check file still exists after acquiring lock
+    if [[ -f "$QUEUE_FILE" ]]; then
+        mv "$QUEUE_FILE" "$PROCESSING_FILE" 2>/dev/null || true
+    fi
+) 201>"$QUEUE_LOCK_FILE"
 
 if [[ ! -f "$PROCESSING_FILE" ]]; then
     echo "[$(date)] No queue file to process." >> "$LOG_FILE"
