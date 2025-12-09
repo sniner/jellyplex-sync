@@ -27,7 +27,7 @@ QUEUE_FILE="${QUEUE_FILE:-/mnt/user/Media/.jellyplex-queue}"
 LOCK_FILE="/tmp/jellyplex-cron.lock"
 # Lock file shared with Radarr hook (must be accessible by both)
 QUEUE_LOCK_FILE="${QUEUE_LOCK_FILE:-/tmp/jellyplex-queue.lock}"
-LOG_FILE="${LOG_FILE:-/mnt/user/appdata/radarr/logs/jellyplex-sync.log}"
+LOG_FILE="${LOG_FILE:-/mnt/user/appdata/radarr/logs/jellyplex-sync.txt}"
 
 # Docker Configuration
 SYNC_IMAGE="ghcr.io/plex-migration-homelab/jellyplex-sync:latest"

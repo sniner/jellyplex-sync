@@ -25,7 +25,7 @@ QUEUE_FILE="${QUEUE_DIR}/.jellyplex-queue"
 # Lock file shared with cron script - must be accessible by both processes
 QUEUE_LOCK_FILE="${QUEUE_LOCK_FILE:-/tmp/jellyplex-queue.lock}"
 
-LOG_FILE="${LOG_FILE:-/config/logs/jellyplex-hook.log}"
+LOG_FILE="${LOG_FILE:-/config/logs/jellyplex-hook.txt}"
 
 # ==============================================================================
 # LOGIC
