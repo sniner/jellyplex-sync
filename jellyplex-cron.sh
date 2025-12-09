@@ -178,18 +178,9 @@ if [[ -n "$JELLYFIN_API_KEY" && ${#SYNCED_PATHS[@]} -gt 0 ]]; then
     # We construct a JSON array for the Updates
     JSON_UPDATES=""
     for raw_path in "${SYNCED_PATHS[@]}"; do
-        # Apply strict sed substitution as requested previously, but using variables
-        # Note: We assume Radarr path (/Cumflix) needs to map to Jellyfin internal path (/media)
-        # and we use the library names detected earlier.
-
-        # Construct dynamic sed pattern
-        # Replace /Cumflix/<source_lib>/ with /media/<target_lib>/
-        # We assume standard Radarr mount /Cumflix maps to Host Media (or whatever path prefix is used)
-
-        # We use a rough heuristic: replace the source lib name with target lib name
-        # and change the prefix /Cumflix to /media if present.
-
-        JELLYFIN_PATH=$(echo "$raw_path" | sed "s|${SOURCE_4K}|${TARGET_4K}|; s|${SOURCE_STD}|${TARGET_STD}|; s|^/Cumflix/|/media/|")
+        # Transform Radarr path (/Cumflix/...) to Jellyfin internal path (/media/...)
+        # Uses anchored patterns to prevent double-replacement (4K pattern must come first)
+        JELLYFIN_PATH=$(echo "$raw_path" | sed "s|^/Cumflix/${SOURCE_4K}/|/media/${TARGET_4K}/|; s|^/Cumflix/${SOURCE_STD}/|/media/${TARGET_STD}/|")
 
         # Escape for JSON
         JELLYFIN_PATH_ESCAPED=$(echo "$JELLYFIN_PATH" | sed 's/\\/\\\\/g; s/"/\\"/g')
