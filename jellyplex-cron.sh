@@ -8,12 +8,6 @@
 #
 # Schedule recommendation: */5 * * * * (Every 5 minutes)
 #
-# Race Condition Prevention:
-#   - Uses flock on the cron lock to prevent concurrent cron executions
-#   - Uses flock on a shared lock file (QUEUE_LOCK_FILE) during atomic move to coordinate with Radarr
-#     and prevent Radarr writing during the critical section
-#   - Atomic mv operation ensures queue is fully moved before processing
-#
 
 set -euo pipefail
 
@@ -22,8 +16,7 @@ set -euo pipefail
 # ==============================================================================
 
 # Path to the queue file (Must match the location written by Radarr hook, but from Host perspective)
-# (Radarr sees this as /Cumflix/.jellyplex-queue due to container path mapping)
-QUEUE_FILE="${QUEUE_FILE:-/mnt/user/Media/.jellyplex-queue}"
+QUEUE_FILE="${QUEUE_FILE:-/mnt/user/Media/.temp/.jellyplex-queue}"
 LOCK_FILE="/tmp/jellyplex-cron.lock"
 # Lock file shared with Radarr hook (must be accessible by both)
 QUEUE_LOCK_FILE="${QUEUE_LOCK_FILE:-/tmp/jellyplex-queue.lock}"
@@ -35,9 +28,12 @@ SYNC_IMAGE="ghcr.io/plex-migration-homelab/jellyplex-sync:latest"
 MOUNT_SOURCE="${MOUNT_SOURCE:-/mnt/user/Media}"
 
 # Jellyfin Configuration
-# SECURITY NOTE: Use HTTPS in production
 JELLYFIN_URL="${JELLYFIN_URL:-http://localhost:8096}"
 JELLYFIN_API_KEY="${JELLYFIN_API_KEY:-}"
+
+# Radarr Configuration
+# The internal path Radarr uses for the root media folder (Default: /Cumflix)
+RADARR_ROOT="${RADARR_ROOT:-/Cumflix}"
 
 # Library Configuration (Configurable patterns)
 # 4K Library
@@ -71,7 +67,6 @@ fi
 echo "[$(date)] === Starting Batch Sync ===" >> "$LOG_FILE"
 
 # Atomically move queue to processing file
-# Use the same lock file as the Radarr hook to prevent race conditions
 PROCESSING_FILE="${QUEUE_FILE}.processing"
 (
     flock -x 201
@@ -97,6 +92,7 @@ fi
 
 FAILED_COUNT=0
 SYNCED_PATHS=()
+FAILED_PATHS=()
 
 # Process each unique movie
 while IFS= read -r movie_path; do
@@ -105,12 +101,6 @@ while IFS= read -r movie_path; do
     echo "[$(date)] Processing: $movie_path" >> "$LOG_FILE"
 
     # Smart Path Logic: Detect library type
-    # Note: movie_path comes from Radarr, which might use a different path mapping than Host.
-    # We pass the raw path to Docker via --partial, and the Python script's resolve_movie_folder
-    # logic handles matching it against the container's filesystem.
-
-    # We still need to determine SOURCE/TARGET for the main sync arguments.
-    # We guess based on the string.
     if [[ "$movie_path" == *"${LIB_4K_PATTERN}"* ]]; then
         SOURCE_LIB="$SOURCE_4K"
         TARGET_LIB="$TARGET_4K"
@@ -121,6 +111,8 @@ while IFS= read -r movie_path; do
 
     # Execute Docker Sync
     # We pass --partial "$movie_path" so the container only syncs that specific folder.
+    # We temporarily disable 'set -e' to catch Docker errors without crashing the script.
+    set +e
     docker run --rm \
         --user 99:100 \
         -v "${MOUNT_SOURCE}:/mnt" \
@@ -132,23 +124,36 @@ while IFS= read -r movie_path; do
         --partial "$movie_path" \
         "/mnt/${SOURCE_LIB}" \
         "/mnt/${TARGET_LIB}" >> "$LOG_FILE" 2>&1
-
+    
     EXIT_CODE=$?
+    set -e
+
     if [[ $EXIT_CODE -ne 0 ]]; then
         echo "[$(date)] ERROR: Sync failed for $movie_path (Exit: $EXIT_CODE)" >> "$LOG_FILE"
         ((FAILED_COUNT++))
+        FAILED_PATHS+=("$movie_path")
     else
         SYNCED_PATHS+=("$movie_path")
     fi
 
 done <<< "$PATHS"
 
-# Cleanup
+# Re-queue failed items so they aren't lost
+if [[ ${#FAILED_PATHS[@]} -gt 0 ]]; then
+    echo "[$(date)] Re-queuing ${#FAILED_PATHS[@]} failed items..." >> "$LOG_FILE"
+    (
+        flock -x 201
+        for fail_path in "${FAILED_PATHS[@]}"; do
+            echo "$fail_path" >> "$QUEUE_FILE"
+        done
+    ) 201>"$QUEUE_LOCK_FILE"
+fi
+
+# Cleanup processing file
 rm -f "$PROCESSING_FILE"
 
 # Fix permissions on target directories (Safety net)
 echo "[$(date)] Setting permissions..." >> "$LOG_FILE"
-# We define standard targets based on our assumption of layout
 TARGET_DIRS=(
     "${MOUNT_SOURCE}/${TARGET_STD}"
     "${MOUNT_SOURCE}/${TARGET_4K}"
@@ -162,18 +167,47 @@ done
 
 # Jellyfin Notification
 if [[ -n "$JELLYFIN_API_KEY" && ${#SYNCED_PATHS[@]} -gt 0 ]]; then
-    echo "[$(date)] Triggering Full Library Scan (Nuclear Option)..." >> "$LOG_FILE"
+    echo "[$(date)] Notifying Jellyfin..." >> "$LOG_FILE"
 
-    # POST /Library/Refresh
-    # The API lacks a granular "scan path" endpoint for new folders.
-    # We must trigger a global scan to ensure new directories are discovered.
+    JSON_UPDATES=""
+    for raw_path in "${SYNCED_PATHS[@]}"; do
+        # Robust Path Substitution logic
+        # 1. Try to replace specific library paths first
+        # 2. Fallback to replacing the root folder if the specific library match fails
+        JELLYFIN_PATH=$(echo "$raw_path" | sed \
+            "s|${RADARR_ROOT}/${SOURCE_4K}/|/media/${TARGET_4K}/|; \
+             s|${RADARR_ROOT}/${SOURCE_STD}/|/media/${TARGET_STD}/|; \
+             s|^${RADARR_ROOT}/|/media/|")
+
+        # Escape for JSON
+        JELLYFIN_PATH_ESCAPED=$(echo "$JELLYFIN_PATH" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+        if [[ -n "$JSON_UPDATES" ]]; then
+            JSON_UPDATES="${JSON_UPDATES},"
+        fi
+        JSON_UPDATES="${JSON_UPDATES}{\"Path\":\"${JELLYFIN_PATH_ESCAPED}\",\"UpdateType\":\"Created\"}"
+    done
+
+    # Send request and capture HTTP status code
     HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-        -X POST "${JELLYFIN_URL}/Library/Refresh" \
-        -H "X-Emby-Token: ${JELLYFIN_API_KEY}")
+        -X POST "${JELLYFIN_URL}/Library/Media/Updated" \
+        -H "X-Emby-Token: ${JELLYFIN_API_KEY}" \
+        -H "Content-Type: application/json" \
+        -d "{\"Updates\":[${JSON_UPDATES}]}")
 
-    echo "[$(date)] Library Scan triggered (HTTP $HTTP_CODE)" >> "$LOG_FILE"
+    # Check result
+    if [[ "$HTTP_CODE" == "204" ]]; then
+        echo "[$(date)] SUCCESS: Jellyfin accepted update notification." >> "$LOG_FILE"
+    else
+        echo "[$(date)] WARNING: Jellyfin notification failed (HTTP $HTTP_CODE). Check API Key or URL." >> "$LOG_FILE"
+    fi
+
 else
-    echo "[$(date)] Skipping Notification (No API Key or no items synced)" >> "$LOG_FILE"
+    if [[ -z "$JELLYFIN_API_KEY" ]]; then
+        echo "[$(date)] Skipping Jellyfin notification (No API Key set)" >> "$LOG_FILE"
+    elif [[ ${#SYNCED_PATHS[@]} -eq 0 ]]; then
+        echo "[$(date)] No items successfully synced, skipping notification." >> "$LOG_FILE"
+    fi
 fi
 
 echo "[$(date)] Batch sync complete: ${#SYNCED_PATHS[@]} synced, $FAILED_COUNT failed." >> "$LOG_FILE"
