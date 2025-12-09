@@ -161,46 +161,19 @@ for target_dir in "${TARGET_DIRS[@]}"; do
 done
 
 # Jellyfin Notification
-# We notify per synced item to be precise, or we could do a full library refresh.
-# The user suggested a single batch notification.
-# Since we have mixed libraries (movies/movies-4k), a full scan might be overkill but safe.
-# However, `Library/Media/Updated` is better for specific paths.
-# Let's batch notify the specific paths if API key is present.
-
 if [[ -n "$JELLYFIN_API_KEY" && ${#SYNCED_PATHS[@]} -gt 0 ]]; then
-    echo "[$(date)] Notifying Jellyfin..." >> "$LOG_FILE"
+    echo "[$(date)] Triggering Full Library Scan (Nuclear Option)..." >> "$LOG_FILE"
 
-    # Calculate Jellyfin paths for all synced items
-    # Assumes standard mapping: /Cumflix/movies -> /media/jellyfin/movies
-    # Note: We need to know the mapping logic.
-    # If movie_path is "/Cumflix/movies/Avatar", we want "/media/jellyfin/movies/Avatar".
-
-    # We construct a JSON array for the Updates
-    JSON_UPDATES=""
-    for raw_path in "${SYNCED_PATHS[@]}"; do
-        # Transform Radarr path (/Cumflix/...) to Jellyfin internal path (/media/...)
-        # Uses anchored patterns to prevent double-replacement (4K pattern must come first)
-        JELLYFIN_PATH=$(echo "$raw_path" | sed "s|^/Cumflix/${SOURCE_4K}/|/media/${TARGET_4K}/|; s|^/Cumflix/${SOURCE_STD}/|/media/${TARGET_STD}/|")
-
-        # Escape for JSON
-        JELLYFIN_PATH_ESCAPED=$(echo "$JELLYFIN_PATH" | sed 's/\\/\\\\/g; s/"/\\"/g')
-
-        if [[ -n "$JSON_UPDATES" ]]; then
-            JSON_UPDATES="${JSON_UPDATES},"
-        fi
-        JSON_UPDATES="${JSON_UPDATES}{\"Path\":\"${JELLYFIN_PATH_ESCAPED}\",\"UpdateType\":\"Created\"}"
-    done
-
-    # Send request
+    # POST /Library/Refresh
+    # The API lacks a granular "scan path" endpoint for new folders.
+    # We must trigger a global scan to ensure new directories are discovered.
     HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-        -X POST "${JELLYFIN_URL}/Library/Media/Updated" \
-        -H "X-Emby-Token: ${JELLYFIN_API_KEY}" \
-        -H "Content-Type: application/json" \
-        -d "{\"Updates\":[${JSON_UPDATES}]}")
+        -X POST "${JELLYFIN_URL}/Library/Refresh" \
+        -H "X-Emby-Token: ${JELLYFIN_API_KEY}")
 
-    echo "[$(date)] Jellyfin notification sent (HTTP $HTTP_CODE)" >> "$LOG_FILE"
+    echo "[$(date)] Library Scan triggered (HTTP $HTTP_CODE)" >> "$LOG_FILE"
 else
-    echo "[$(date)] Skipping Jellyfin notification (No API Key or no successful syncs)" >> "$LOG_FILE"
+    echo "[$(date)] Skipping Notification (No API Key or no items synced)" >> "$LOG_FILE"
 fi
 
 echo "[$(date)] Batch sync complete: ${#SYNCED_PATHS[@]} synced, $FAILED_COUNT failed." >> "$LOG_FILE"
