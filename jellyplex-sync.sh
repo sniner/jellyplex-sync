@@ -20,4 +20,4 @@ docker images --no-trunc --format "{{.Repository}} {{.ID}}" \
 # Execute jellyplex-sync with mounted media directory
 # NOTE: Adjust the paths below to match your actual media directories!
 docker run --rm -v /mnt/user/media:/mnt $IMAGE:$VERSION \
-    --delete --create --dry-run /mnt/Movies /mnt/Plex
+    --delete --create --update-filenames --dry-run /mnt/Movies /mnt/Plex
