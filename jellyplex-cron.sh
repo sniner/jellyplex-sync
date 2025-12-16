@@ -32,8 +32,8 @@ JELLYFIN_URL="${JELLYFIN_URL:-http://localhost:8096}"
 JELLYFIN_API_KEY="${JELLYFIN_API_KEY:-}"
 
 # Radarr Configuration
-# The internal path Radarr uses for the root media folder (Default: /Cumflix)
-RADARR_ROOT="${RADARR_ROOT:-/Cumflix}"
+# The internal path Radarr uses for the root media folder (Default: /media)
+RADARR_ROOT="${RADARR_ROOT:-/media}"
 
 # Library Configuration (Configurable patterns)
 # 4K Library

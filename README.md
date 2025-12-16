@@ -100,6 +100,12 @@ jellyplex-sync [OPTIONS] /path/to/jellyfin/library /path/to/plex/library
 - `--update-filenames`
   Rename existing hardlinks in the target library if they are stale (i.e., pointing to the correct source file but with an outdated name). This is useful when naming conventions change (e.g., adding provider IDs or edition tags) and you want to fix the target filenames without recreating the hardlinks. If not specified, stale links will cause a warning and the creation of a duplicate file (the new correct name) will be skipped to avoid conflicts.
 
+- `--verify-only`
+  Check all existing hard links in the target library without making any changes. Reports any broken links found where the target file exists but doesn't share the same inode as the source file. Useful for auditing your library to detect filesystem corruption or incorrectly copied files. No files will be created, deleted, or repaired.
+
+- `--skip-verify`
+  Skip inode verification for faster syncs when you trust existing links. By default, the script verifies that each hard link in the target shares the same inode as the source file, automatically repairing any broken links found. Use this flag to skip verification and speed up syncs on large libraries where you're confident the existing links are valid.
+
 ## Examples
 
 Mirror a Jellyfin library into an empty Plex structure:
@@ -169,6 +175,57 @@ If Radarr runs in a Docker container with different volume mappings than `jellyp
 * **Asset folders**: Subdirectories (e.g., `other`, `interviews`) are processed recursively with the same hard-link logic. NB: rename `extras` folder to `other` in your Jellyfin library, because Plex does not recognize `extras`.
 
 * **Stray items**: When `--delete` is used, any unexpected files or folders in the target library will be removed.
+
+## Hard Link Verification
+
+By default, jellyplex-sync verifies the integrity of existing hard links during each sync operation. This ensures that files in your target library are genuine hard links sharing the same inode as their source counterparts, rather than duplicate copies or corrupted links.
+
+### How It Works
+
+When the script encounters an existing file in the target:
+
+1. **Initial check**: Uses `os.path.samefile()` to quickly determine if source and target reference the same file
+2. **Inode verification**: Compares the inode numbers (`st_ino`) of both files to confirm they're truly hard-linked
+3. **Automatic repair**: If a broken link is detected (same path but different inodes), the target file is deleted and recreated as a proper hard link
+4. **Statistics**: Reports verification and repair statistics in the summary output
+
+### Broken Link Detection
+
+Broken links can occur when:
+- Files are accidentally copied instead of hard-linked (e.g., using `cp` instead of `cp -l`)
+- Filesystem issues corrupt the directory structure
+- Manual edits or tools modify files without preserving hard links
+- Migration between storage systems doesn't preserve inode relationships
+
+### Verification Modes
+
+**Normal mode (default)**:
+```bash
+jellyplex-sync /source /target
+```
+Verifies all existing links and automatically repairs any broken ones found. Verification stats appear in the summary if repairs were needed.
+
+**Verify-only mode**:
+```bash
+jellyplex-sync --verify-only /source /target
+```
+Audits your entire library without making changes. Reports all broken links found. Useful for:
+- Periodic health checks of your library
+- Diagnosing sync issues
+- Verifying filesystem integrity after migrations
+
+**Skip verification**:
+```bash
+jellyplex-sync --skip-verify /source /target
+```
+Bypasses inode verification for faster syncs. Use when:
+- You're confident existing links are valid
+- Syncing very large libraries where verification overhead matters
+- Running frequent incremental syncs on trusted infrastructure
+
+### Cross-Filesystem Protection
+
+The script detects when source and target are on different filesystems and fails immediately with a clear error message. Hard links cannot span filesystem boundaries, and attempting to do so would result in file copies rather than links.
 
 ## Jellyfin movie library outline
 
@@ -281,6 +338,7 @@ This fork differs from the original [sniner/jellyplex-sync](https://github.com/s
 - **Associated file syncing**: Subtitles (`.srt`, `.ass`, `.ssa`, `.sub`, `.idx`, `.vtt`) and EDL files (`.edl`) are now synced alongside their parent videos with matching names.
 - **Provider tag preservation**: File-level provider tags (`{tmdb-xxx}`, `{imdb-xxx}`) are preserved from source filenames to target filenames, ensuring correct media identification even when folder-level metadata is insufficient.
 - **Stale link handling**: Detects and optionally renames existing hardlinks that have outdated filenames (via `--update-filenames`), preventing duplicates when naming conventions change.
+- **Hard link verification**: Automatically verifies and repairs broken hard links by checking inode matches. Includes `--verify-only` mode for auditing and `--skip-verify` for faster syncs. Detects and prevents cross-filesystem sync attempts.
 - **Backwards compatibility**: Fully compatible with existing synced libraries created by the original tool. No breaking changes to library structure or naming conventions.
 
 ## License

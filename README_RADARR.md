@@ -4,13 +4,13 @@ This integration uses an asynchronous "Queue & Batch" approach. Unlike a synchro
 
 ## Architecture
 
-1.  **Radarr Hook (`jellyplex-radarr-hook.sh`)**: Runs inside the Radarr container. Triggers on Import/Upgrade/Rename. Atomically appends the movie path to a queue file (e.g., `/Cumflix/.jellyplex-queue`).
+1.  **Radarr Hook (`jellyplex-radarr-hook.sh`)**: Runs inside the Radarr container. Triggers on Import/Upgrade/Rename. Atomically appends the movie path to a queue file (e.g., `/media/.jellyplex-queue`).
 2.  **Cron Script (`jellyplex-cron.sh`)**: Runs on the Host (Unraid). Checks the queue every few minutes, deduplicates paths, runs the Docker sync container for each movie using `--partial` (which limits the sync to only the specified movie path, rather than the entire library), and notifies Jellyfin.
 
 ## Prerequisites
 
 1.  **Shared Storage**: Radarr and the Host must share access to the media folder where the queue file resides.
-    *   Example: Radarr maps `/mnt/user/Media` to `/Cumflix`. The queue file will be at `/mnt/user/Media/.jellyplex-queue`.
+    *   Example: Radarr maps `/mnt/user/Media` to `/media`. The queue file will be at `/mnt/user/Media/.jellyplex-queue`.
 2.  **User Scripts / Cron**: Ability to run scripts on the Host (e.g., Unraid "User Scripts" plugin).
 
 ## Installation
@@ -27,7 +27,7 @@ This integration uses an asynchronous "Queue & Batch" approach. Unlike a synchro
     *   **Save**.
 
 **Configuration**:
-By default, the script writes to `/Cumflix/.jellyplex-queue`. If your Radarr uses a different mapping, edit the `QUEUE_DIR` variable in the script or pass it as an environment variable.
+By default, the script writes to `/media/.jellyplex-queue`. If your Radarr uses a different mapping, edit the `QUEUE_DIR` variable in the script or pass it as an environment variable.
 
 ### 2. Host Cron Job (On Unraid/Host)
 
@@ -44,7 +44,7 @@ By default, the script writes to `/Cumflix/.jellyplex-queue`. If your Radarr use
 
 | Variable | Script | Description | Default |
 | :--- | :--- | :--- | :--- |
-| `QUEUE_DIR` | Hook | Directory for queue file (Radarr path) | `/Cumflix` |
+| `QUEUE_DIR` | Hook | Directory for queue file (Radarr path) | `/media` |
 | `QUEUE_FILE` | Cron | Path to queue file (Host path) | `/mnt/user/Media/.jellyplex-queue` |
 | `QUEUE_LOCK_FILE` | Both | Shared lock file for race condition prevention | `/tmp/jellyplex-queue.lock` |
 | `MOUNT_SOURCE` | Cron | Host media path to mount in Docker | `/mnt/user/Media` |

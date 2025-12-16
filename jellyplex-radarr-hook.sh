@@ -20,7 +20,7 @@ set -euo pipefail
 # Directory where the queue file will be stored.
 # This must be a path accessible to both Radarr (this script) and the Host Cron script.
 # Typically a shared media folder.
-QUEUE_DIR="${QUEUE_DIR:-/Cumflix}"
+QUEUE_DIR="${QUEUE_DIR:-/media}"
 QUEUE_FILE="${QUEUE_DIR}/.jellyplex-queue"
 # Lock file shared with cron script - must be accessible by both processes
 QUEUE_LOCK_FILE="${QUEUE_LOCK_FILE:-/tmp/jellyplex-queue.lock}"
