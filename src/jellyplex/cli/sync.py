@@ -21,6 +21,8 @@ def main() -> None:
     parser.add_argument("--verbose", action="store_true", help="Show more information messages")
     parser.add_argument("--debug", action="store_true", help="Show debug messages")
     parser.add_argument("--update-filenames", action="store_true", help="Rename existing hardlinks if they have outdated names")
+    parser.add_argument("--verify-only", action="store_true", help="Check all existing hard links without making changes, report any broken links")
+    parser.add_argument("--skip-verify", action="store_true", help="Skip inode verification for faster syncs when you trust existing links")
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--partial", help="Sync only the specified movie folder path")
@@ -64,7 +66,7 @@ def main() -> None:
         result = jp.sync(
             args.source,
             args.target,
-            dry_run= args.dry_run,
+            dry_run=args.dry_run,
             delete=args.delete,
             create=args.create,
             verbose=args.verbose,
@@ -72,6 +74,8 @@ def main() -> None:
             convert_to=args.convert_to,
             update_filenames=args.update_filenames,
             partial_path=partial_path,
+            verify_only=args.verify_only,
+            skip_verify=args.skip_verify,
         )
     except KeyboardInterrupt:
         logging.info("INTERRUPTED")

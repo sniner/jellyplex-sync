@@ -57,6 +57,81 @@ def is_source_empty_or_unmounted(source_path: pathlib.Path) -> bool:
         return True
 
 
+def are_same_filesystem(path1: pathlib.Path, path2: pathlib.Path) -> bool:
+    """Check if two paths are on the same filesystem.
+
+    Uses st_dev from stat() to compare device IDs. Returns True if both paths
+    are on the same filesystem, False otherwise.
+    """
+    try:
+        stat1 = path1.stat()
+        stat2 = path2.stat()
+        return stat1.st_dev == stat2.st_dev
+    except OSError:
+        # If we can't stat, assume different filesystems to be safe
+        return False
+
+
+def verify_hardlink(source: pathlib.Path, target: pathlib.Path) -> bool:
+    """Verify that target is a valid hard link to source by comparing inodes.
+
+    Returns True if both files share the same inode (valid hard link),
+    False otherwise.
+    """
+    try:
+        source_stat = source.stat()
+        target_stat = target.stat()
+        return source_stat.st_ino == target_stat.st_ino
+    except OSError:
+        return False
+
+
+def repair_hardlink(
+    source: pathlib.Path,
+    target: pathlib.Path,
+    *,
+    dry_run: bool = False,
+) -> bool:
+    """Repair a broken hard link by deleting target and recreating the link.
+
+    Returns True on successful repair, False on failure.
+    """
+    try:
+        source_inode = source.stat().st_ino
+        target_inode = target.stat().st_ino
+    except OSError as e:
+        log.error("Cannot stat files for repair: %s", e)
+        return False
+
+    log.warning(
+        "Broken hard link detected: %s (inode %d) != %s (inode %d)",
+        target, target_inode, source, source_inode
+    )
+
+    if dry_run:
+        log.info("REPAIR %s", target)
+        return True
+
+    try:
+        target.unlink()
+        if safe_hardlink(source, target):
+            log.info("Repaired hard link: %s", target)
+            return True
+        return False
+    except OSError as e:
+        log.error("Failed to repair hard link '%s': %s", target, e)
+        return False
+
+
+@dataclass
+class VerifyStats:
+    """Statistics for hard link verification."""
+    files_checked: int = 0
+    links_valid: int = 0
+    links_broken: int = 0
+    links_repaired: int = 0
+
+
 def safe_hardlink(source: pathlib.Path, target: pathlib.Path) -> bool:
     """Create a hardlink with proper error handling.
 
@@ -189,6 +264,9 @@ class AssetStats:
     files_total: int = 0
     files_linked: int = 0
     items_removed: int = 0
+    links_verified: int = 0
+    links_broken: int = 0
+    links_repaired: int = 0
 
 
 def process_assets_folder(
@@ -198,12 +276,18 @@ def process_assets_folder(
     dry_run: bool = False,
     delete: bool = False,
     verbose: bool = False,
+    verify_only: bool = False,
+    skip_verify: bool = False,
     stats: AssetStats | None = None,
 ) -> AssetStats:
     if not source_path.is_dir():
         raise ValueError(f"{source_path!s} is not a folder")
 
+    # In verify_only mode, skip creating directories
     if not target_path.exists():
+        if verify_only:
+            # Nothing to verify if target doesn't exist
+            return stats if stats else AssetStats()
         if dry_run:
             log.info("MKDIR  %s", target_path)
         else:
@@ -221,7 +305,15 @@ def process_assets_folder(
 
         dest = target_path / entry.name
         if entry.is_dir():
-            process_assets_folder(entry, dest, verbose=verbose, stats=stats, dry_run=dry_run, delete=delete)
+            process_assets_folder(
+                entry, dest,
+                verbose=verbose,
+                stats=stats,
+                dry_run=dry_run,
+                delete=delete,
+                verify_only=verify_only,
+                skip_verify=skip_verify,
+            )
         elif entry.is_file():
             # Skip zero-byte files (likely placeholders or corrupt)
             try:
@@ -234,10 +326,26 @@ def process_assets_folder(
             if dest.exists():
                 try:
                     if dest.samefile(entry):
+                        # Files match by samefile(), now verify inode if not skipping
+                        if not skip_verify:
+                            stats.links_verified += 1
+                            if not verify_hardlink(entry, dest):
+                                stats.links_broken += 1
+                                if verify_only:
+                                    log.warning(
+                                        "Broken hard link: %s -> %s (would repair)",
+                                        dest, entry
+                                    )
+                                elif repair_hardlink(entry, dest, dry_run=dry_run):
+                                    stats.links_repaired += 1
                         if verbose:
                             log.debug("Target file '%s' already exists, skipping", entry.name)
                     else:
-                        if dry_run:
+                        # Target exists but is not a hardlink to source - relink
+                        if verify_only:
+                            log.warning("Target '%s' exists but is not linked to source", dest)
+                            stats.links_broken += 1
+                        elif dry_run:
                             log.info("RELINK %s", entry)
                         else:
                             dest.unlink()
@@ -247,7 +355,11 @@ def process_assets_folder(
                     log.warning("Cannot check file '%s': %s", dest, e)
                     continue
             else:
-                if dry_run:
+                # Target doesn't exist - create link (unless verify_only)
+                if verify_only:
+                    # Nothing to verify if target doesn't exist
+                    pass
+                elif dry_run:
                     log.info("LINK   %s", dest)
                     # Do not increment stats.files_linked in dry-run mode
                 elif safe_hardlink(entry, dest):
@@ -255,7 +367,7 @@ def process_assets_folder(
             stats.files_total += 1
         synced_items[entry.name] = dest
 
-    if delete and target_path.is_dir():
+    if delete and not verify_only and target_path.is_dir():
         # Remove stray items
         for entry in target_path.iterdir():
             if entry.name in synced_items:
@@ -278,6 +390,9 @@ class MovieStats:
     asset_items_total: int = 0
     asset_items_linked: int = 0
     asset_items_removed: int = 0
+    links_verified: int = 0
+    links_broken: int = 0
+    links_repaired: int = 0
 
 
 def process_movie(
@@ -290,6 +405,8 @@ def process_movie(
     delete: bool = False,
     verbose: bool = False,
     update_filenames: bool = False,
+    verify_only: bool = False,
+    skip_verify: bool = False,
 ) -> MovieStats:
     target_path = target.movie_path(movie)
 
@@ -358,7 +475,11 @@ def process_movie(
                 continue
             assets_to_sync[dir_name] = (entry, target_path / dir_name)
 
+    # In verify_only mode, skip creating directories
     if not target_path.exists():
+        if verify_only:
+            # Nothing to verify if target doesn't exist
+            return stats
         if dry_run:
             log.info("MKDIR  %s", target_path)
         else:
@@ -386,10 +507,27 @@ def process_movie(
     for _video_name, item in videos_to_sync.items():
         if item[1].exists():
             if item[1].samefile(item[0]):
+                # Files match by samefile(), now verify inode if not skipping
+                if not skip_verify:
+                    stats.links_verified += 1
+                    if not verify_hardlink(item[0], item[1]):
+                        stats.links_broken += 1
+                        if verify_only:
+                            log.warning(
+                                "Broken hard link: %s -> %s (would repair)",
+                                item[1], item[0]
+                            )
+                        elif repair_hardlink(item[0], item[1], dry_run=dry_run):
+                            stats.links_repaired += 1
                 if verbose:
                     log.info("Target video file '%s' already exists", item[1].name)
                 continue
             else:
+                # Target exists but is not a hardlink to source - relink
+                if verify_only:
+                    log.warning("Target '%s' exists but is not linked to source", item[1])
+                    stats.links_broken += 1
+                    continue
                 log.info("Replacing video file '%s' → '%s'", item[0].name, item[1].name)
                 if dry_run:
                     log.info("DELETE %s", item[1])
@@ -474,7 +612,11 @@ def process_movie(
                                     preserved_stale_files.add(assoc.name)
                         continue
 
-        if dry_run:
+        # Create new link (unless verify_only)
+        if verify_only:
+            # Nothing to verify if target doesn't exist
+            pass
+        elif dry_run:
             log.info("LINK   %s", item[1])
             stats.videos_linked += 1
         else:
@@ -482,7 +624,7 @@ def process_movie(
             if safe_hardlink(item[0], item[1]):
                 stats.videos_linked += 1
 
-    if delete and target_path.is_dir():
+    if delete and not verify_only and target_path.is_dir():
         # Remove stray items (but preserve stale files that are still valid hardlinks)
         for entry in target_path.iterdir():
             if entry.name in videos_to_sync or entry.name in assets_to_sync:
@@ -509,10 +651,20 @@ def process_movie(
             continue
 
         if item[0].is_dir():
-            s = process_assets_folder(item[0], item[1], delete=delete, verbose=verbose, dry_run=dry_run)
+            s = process_assets_folder(
+                item[0], item[1],
+                delete=delete,
+                verbose=verbose,
+                dry_run=dry_run,
+                verify_only=verify_only,
+                skip_verify=skip_verify,
+            )
             stats.asset_items_total += s.files_total
             stats.asset_items_linked += s.files_linked
             stats.asset_items_removed += s.items_removed
+            stats.links_verified += s.links_verified
+            stats.links_broken += s.links_broken
+            stats.links_repaired += s.links_repaired
         elif item[0].is_file():
             # Skip zero-byte files
             try:
@@ -526,10 +678,26 @@ def process_movie(
             if item[1].exists():
                 try:
                     if item[1].samefile(item[0]):
+                        # Files match by samefile(), now verify inode if not skipping
+                        if not skip_verify:
+                            stats.links_verified += 1
+                            if not verify_hardlink(item[0], item[1]):
+                                stats.links_broken += 1
+                                if verify_only:
+                                    log.warning(
+                                        "Broken hard link: %s -> %s (would repair)",
+                                        item[1], item[0]
+                                    )
+                                elif repair_hardlink(item[0], item[1], dry_run=dry_run):
+                                    stats.links_repaired += 1
                         if verbose:
                             log.debug("Target asset file '%s' already exists, skipping", item[1].name)
                     else:
-                        if dry_run:
+                        # Target exists but is not a hardlink to source - relink
+                        if verify_only:
+                            log.warning("Target '%s' exists but is not linked to source", item[1])
+                            stats.links_broken += 1
+                        elif dry_run:
                             log.info("RELINK %s", item[0])
                             stats.asset_items_linked += 1
                         else:
@@ -540,7 +708,11 @@ def process_movie(
                     log.warning("Cannot check associated file '%s': %s", item[1], e)
                     continue
             else:
-                if dry_run:
+                # Target doesn't exist - create link (unless verify_only)
+                if verify_only:
+                    # Nothing to verify if target doesn't exist
+                    pass
+                elif dry_run:
                     log.info("LINK   %s", item[1])
                     stats.asset_items_linked += 1
                 elif safe_hardlink(item[0], item[1]):
@@ -629,6 +801,8 @@ def sync(
     convert_to: str | None = None,
     update_filenames: bool = False,
     partial_path: str | None = None,
+    verify_only: bool = False,
+    skip_verify: bool = False,
 ) -> int:
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -685,9 +859,25 @@ def sync(
             log.error("Target directory '%s' does not exist", target_lib.base_dir)
             return 1
 
+    # Check if source and target are on the same filesystem (required for hard links)
+    if not are_same_filesystem(source_lib.base_dir, target_lib.base_dir):
+        log.error(
+            "Source '%s' and target '%s' are on different filesystems. "
+            "Hard links require both paths to be on the same filesystem. "
+            "Consider using a symbolic link or copy-based sync instead.",
+            source_lib.base_dir, target_lib.base_dir
+        )
+        return 1
+
+    if verify_only:
+        log.info("VERIFY-ONLY mode: Checking existing hard links without making changes")
+
     stat_movies: int = 0
     stat_items_linked: int = 0
     stat_items_removed: int = 0
+    stat_links_verified: int = 0
+    stat_links_broken: int = 0
+    stat_links_repaired: int = 0
     lib_stats = LibraryStats()
 
     if partial_path:
@@ -712,10 +902,15 @@ def sync(
                 verbose=verbose,
                 dry_run=dry_run,
                 update_filenames=update_filenames,
+                verify_only=verify_only,
+                skip_verify=skip_verify,
             )
             stat_movies += 1
             stat_items_linked += s.asset_items_linked + s.videos_linked
             stat_items_removed += s.asset_items_removed + s.items_removed
+            stat_links_verified += s.links_verified
+            stat_links_broken += s.links_broken
+            stat_links_repaired += s.links_repaired
     else:
         for src, _, movie in scan_media_library(source_lib, target_lib, delete=delete, dry_run=dry_run, stats=lib_stats):
             s = process_movie(
@@ -727,18 +922,45 @@ def sync(
                 verbose=verbose,
                 dry_run=dry_run,
                 update_filenames=update_filenames,
+                verify_only=verify_only,
+                skip_verify=skip_verify,
             )
             stat_movies += 1
             stat_items_linked += s.asset_items_linked + s.videos_linked
             stat_items_removed += s.asset_items_removed + s.items_removed
+            stat_links_verified += s.links_verified
+            stat_links_broken += s.links_broken
+            stat_links_repaired += s.links_repaired
 
         stat_items_removed += lib_stats.items_removed
 
-    summary = (
-        f"Summary: {stat_movies} movies found, "
-        f"{stat_items_linked} files updated, "
-        f"{stat_items_removed} files removed."
-    )
+    # Build summary message
+    if verify_only:
+        summary = (
+            f"Verification complete: {stat_movies} movies checked, "
+            f"{stat_links_verified} links verified, "
+            f"{stat_links_broken} broken links found."
+        )
+    elif skip_verify:
+        summary = (
+            f"Summary: {stat_movies} movies found, "
+            f"{stat_items_linked} files updated, "
+            f"{stat_items_removed} files removed. "
+            "(inode verification skipped)"
+        )
+    else:
+        summary_parts = [
+            f"Summary: {stat_movies} movies found",
+            f"{stat_items_linked} files updated",
+            f"{stat_items_removed} files removed",
+        ]
+        if stat_links_verified > 0:
+            summary_parts.append(f"{stat_links_verified} links verified")
+        if stat_links_broken > 0:
+            summary_parts.append(f"{stat_links_broken} broken links found")
+        if stat_links_repaired > 0:
+            summary_parts.append(f"{stat_links_repaired} links repaired")
+        summary = ", ".join(summary_parts) + "."
     logging.info(summary)
 
     return 0
