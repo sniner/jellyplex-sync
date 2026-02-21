@@ -1,11 +1,14 @@
 from pathlib import Path
+
 import pytest
 
 import jellyplex_sync as jp
 
+
 @pytest.fixture
 def jlib() -> jp.JellyfinLibrary:
     return jp.JellyfinLibrary(Path("./Jellyfin"))
+
 
 @pytest.fixture
 def plib() -> jp.PlexLibrary:
@@ -93,7 +96,9 @@ SAMPLES_FILENAME = [
 ]
 
 
-@pytest.mark.parametrize("path,expected", SAMPLES_FULL_PATH, ids=[str(p) for p, _ in SAMPLES_FULL_PATH])
+@pytest.mark.parametrize(
+    "path,expected", SAMPLES_FULL_PATH, ids=[str(p) for p, _ in SAMPLES_FULL_PATH]
+)
 def test_plex_to_jellyfin_full(jlib: jp.JellyfinLibrary, plib: jp.PlexLibrary, path, expected):
     source_path = Path(plib.base_dir, path)
 
@@ -110,7 +115,9 @@ def test_plex_to_jellyfin_full(jlib: jp.JellyfinLibrary, plib: jp.PlexLibrary, p
     assert str(target_path) == expected, f"Failed on path: {path}"
 
 
-@pytest.mark.parametrize("path,expected", SAMPLES_FILENAME, ids=[str(p) for p, _ in SAMPLES_FILENAME])
+@pytest.mark.parametrize(
+    "path,expected", SAMPLES_FILENAME, ids=[str(p) for p, _ in SAMPLES_FILENAME]
+)
 def test_plex_to_jellyfin_short(jlib: jp.JellyfinLibrary, plib: jp.PlexLibrary, path, expected):
     source_path = Path(plib.base_dir, path)
 

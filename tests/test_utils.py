@@ -1,7 +1,7 @@
 from pathlib import Path
-import pytest
 
 from jellyplex_sync import utils
+
 
 def test_absolute_common_path():
     root = Path("/")
@@ -16,10 +16,14 @@ def test_absolute_common_path():
         Path("/mnt/media/music/"),
     ) == Path("/mnt/media/")
 
-    assert utils.common_path(
-        Path("/mnt/media/movies/"),
-        Path("/usr/local/bin/"),
-    ) == root
+    assert (
+        utils.common_path(
+            Path("/mnt/media/movies/"),
+            Path("/usr/local/bin/"),
+        )
+        == root
+    )
+
 
 def test_relative_common_path():
     root = Path.cwd()
@@ -29,7 +33,10 @@ def test_relative_common_path():
         Path("./media/movies/Second movie/"),
     ) == Path(root, "media/movies")
 
-    assert utils.common_path(
-        Path("./media/movies/"),
-        Path("./music/"),
-    ) == root
+    assert (
+        utils.common_path(
+            Path("./media/movies/"),
+            Path("./music/"),
+        )
+        == root
+    )

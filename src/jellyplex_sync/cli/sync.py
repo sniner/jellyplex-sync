@@ -1,25 +1,57 @@
 #!/usr/bin/python3
+from __future__ import annotations
 
 import argparse
 import logging
-import pathlib
 import sys
 
 import jellyplex_sync as jp
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Create a Plex compatible media library from a Jellyfin library.")
-    parser.add_argument("source", help="Jellyfin media library")
-    parser.add_argument("target", help="Plex media library")
-    parser.add_argument("--convert-to", type=str,
-        choices=[jp.JellyfinLibrary.shortname(), jp.PlexLibrary.shortname(), "auto"], default="auto",
-        help="Type of library to convert to ('auto' will try to determine source library type)")
-    parser.add_argument("--dry-run", action="store_true", help="Show actions only, don't execute them")
-    parser.add_argument("--delete", action="store_true", help="Remove stray folders from target library")
-    parser.add_argument("--create", action="store_true", help="Create missing target library")
-    parser.add_argument("--verbose", action="store_true", help="Show more information messages")
-    parser.add_argument("--debug", action="store_true", help="Show debug messages")
+    parser = argparse.ArgumentParser(
+        description="Create a Plex compatible media library from a Jellyfin library."
+    )
+    parser.add_argument(
+        "source",
+        help="Jellyfin media library",
+    )
+    parser.add_argument(
+        "target",
+        help="Plex media library",
+    )
+    parser.add_argument(
+        "--convert-to",
+        type=str,
+        choices=[jp.JellyfinLibrary.shortname(), jp.PlexLibrary.shortname(), "auto"],
+        default="auto",
+        help="Type of library to convert to ('auto' will try to determine source library type)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show actions only, don't execute them",
+    )
+    parser.add_argument(
+        "--delete",
+        action="store_true",
+        help="Remove stray folders from target library",
+    )
+    parser.add_argument(
+        "--create",
+        action="store_true",
+        help="Create missing target library",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show more information messages",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Show debug messages",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -33,7 +65,7 @@ def main() -> None:
         result = jp.sync(
             args.source,
             args.target,
-            dry_run= args.dry_run,
+            dry_run=args.dry_run,
             delete=args.delete,
             create=args.create,
             verbose=args.verbose,

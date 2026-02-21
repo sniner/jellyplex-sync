@@ -1,7 +1,9 @@
 from pathlib import Path
+
 import pytest
 
 import jellyplex_sync as jp
+
 
 @pytest.fixture
 def jlib() -> jp.MediaLibrary:
@@ -16,7 +18,7 @@ SANE_SAMPLES = [
             provider=None,
             movie_id=None,
             year=None,
-        )
+        ),
     ),
     (
         Path("First movie (1970)"),
@@ -25,7 +27,7 @@ SANE_SAMPLES = [
             provider=None,
             movie_id=None,
             year="1970",
-        )
+        ),
     ),
     (
         Path("First movie (1970) [imdbid-tt123456]"),
@@ -34,7 +36,7 @@ SANE_SAMPLES = [
             provider="imdb",
             movie_id="tt123456",
             year="1970",
-        )
+        ),
     ),
     (
         Path("First movie [imdbid-tt123456]"),
@@ -43,7 +45,7 @@ SANE_SAMPLES = [
             provider="imdb",
             movie_id="tt123456",
             year=None,
-        )
+        ),
     ),
     (
         Path("Series – A movie (1984) [imdbid-tt654321]"),
@@ -52,7 +54,7 @@ SANE_SAMPLES = [
             provider="imdb",
             movie_id="tt654321",
             year="1984",
-        )
+        ),
     ),
 ]
 
@@ -65,7 +67,7 @@ NOT_RECOMMENDED_SAMPLES = [
             provider=None,
             movie_id=None,
             year="1984",
-        )
+        ),
     ),
     (
         # Hyphen in title string (with metadata id)
@@ -75,7 +77,7 @@ NOT_RECOMMENDED_SAMPLES = [
             provider="imdb",
             movie_id="tt654321",
             year="1984",
-        )
+        ),
     ),
 ]
 
@@ -88,7 +90,7 @@ NOT_WORKING_SAMPLES = [
             provider=None,
             movie_id=None,
             year=None,
-        )
+        ),
     ),
     (
         # Missing spaces
@@ -98,7 +100,7 @@ NOT_WORKING_SAMPLES = [
             provider=None,
             movie_id=None,
             year=None,
-        )
+        ),
     ),
     (
         # Fields mixed up
@@ -108,7 +110,7 @@ NOT_WORKING_SAMPLES = [
             provider=None,
             movie_id=None,
             year="1998",
-        )
+        ),
     ),
     (
         # Unrecognized metadata provider
@@ -118,22 +120,29 @@ NOT_WORKING_SAMPLES = [
             provider=None,
             movie_id=None,
             year=None,
-        )
+        ),
     ),
     (Path(""), None),
 ]
+
 
 @pytest.mark.parametrize("path,expected", SANE_SAMPLES, ids=[str(p) for p, _ in SANE_SAMPLES])
 def test_parse_sane_jellyfin_movie_path(jlib, path, expected):
     result = jlib.parse_movie_path(path)
     assert result == expected, f"Failed on path: {path}"
 
-@pytest.mark.parametrize("path,expected", NOT_RECOMMENDED_SAMPLES, ids=[str(p) for p, _ in NOT_RECOMMENDED_SAMPLES])
+
+@pytest.mark.parametrize(
+    "path,expected", NOT_RECOMMENDED_SAMPLES, ids=[str(p) for p, _ in NOT_RECOMMENDED_SAMPLES]
+)
 def test_parse_not_recommended_jellyfin_movie_path(jlib, path, expected):
     result = jlib.parse_movie_path(path)
     assert result == expected, f"Failed on path: {path}"
 
-@pytest.mark.parametrize("path,expected", NOT_WORKING_SAMPLES, ids=[str(p) for p, _ in NOT_WORKING_SAMPLES])
+
+@pytest.mark.parametrize(
+    "path,expected", NOT_WORKING_SAMPLES, ids=[str(p) for p, _ in NOT_WORKING_SAMPLES]
+)
 def test_parse_bad_jellyfin_movie_path(jlib, path, expected):
     result = jlib.parse_movie_path(path)
     assert result == expected, f"Failed on path: {path}"

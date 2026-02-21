@@ -1,26 +1,30 @@
+from __future__ import annotations
+
 import logging
 import pathlib
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Dict, Generator, List, Optional, Set, Tuple, Type, Union
 
 from .library import (
-    ACCEPTED_VIDEO_SUFFIXES,
     RESOLUTION_PATTERN,
+    MediaLibrary,
     MovieInfo,
     VideoInfo,
-    MediaLibrary,
 )
-
 
 log = logging.getLogger(__name__)
 
 
 JELLYFIN_ID_PATTERN = re.compile(r"\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]")
 JELLYFIN_MOVIE_PATTERNS = [
-    re.compile(r"^(?P<title>.+?)\s+\((?P<year>\d{4})\)\s* - \s*\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"),
-    re.compile(r"^(?P<title>.+?)\s+\((?P<year>\d{4})\)\s+\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"),
+    re.compile(
+        r"^(?P<title>.+?)\s+\((?P<year>\d{4})\)\s* - \s*\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"
+    ),
+    re.compile(
+        r"^(?P<title>.+?)\s+\((?P<year>\d{4})\)\s+\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"
+    ),
     re.compile(r"^(?P<title>.+?)\s+\((?P<year>\d{4})\)$"),
     re.compile(r"^(?P<title>.+?)\s+\[(?P<provider_id>[a-zA-Z]+id-[^\]]+)\]"),
     re.compile(r"^(?P<title>.+?)$"),
@@ -33,12 +37,10 @@ class VariantParser(ABC):
         self.library = library
 
     @abstractmethod
-    def parse(self, variant: str, video: VideoInfo) -> VideoInfo:
-        ...
+    def parse(self, variant: str, video: VideoInfo) -> VideoInfo: ...
 
     @abstractmethod
-    def video_name(self, movie_name: str, video: VideoInfo) -> str:
-        ...
+    def video_name(self, movie_name: str, video: VideoInfo) -> str: ...
 
 
 class SimpleVariantParser(VariantParser):
@@ -50,7 +52,7 @@ class SimpleVariantParser(VariantParser):
             tags=video.tags,
         )
 
-    def _tags_to_variant(self, video: VideoInfo) -> List[str]:
+    def _tags_to_variant(self, video: VideoInfo) -> list[str]:
         if video.resolution:
             return [video.resolution]
         for tag in video.tags or []:
@@ -71,31 +73,38 @@ class SimpleVariantParser(VariantParser):
 @dataclass
 class ResParser:
     pattern: re.Pattern
-    mapping: Union[Callable[[re.Match[str]], List[Union[str, None]]], List[Union[str, None]]]
+    mapping: Callable[[re.Match[str]], list[str | None]] | list[str | None]
+
 
 class SninerVariantParser(SimpleVariantParser):
-    RES_MAP: List[ResParser] = [
-        ResParser(re.compile(r"4k([\.\-]([\w\d]+))?$"), lambda m: ["2160p", m.group(2)] if m.group(1) else ["2160p"]),
-        ResParser(re.compile(r"BD([\.\-]([\w\d]+))?$"), lambda m: ["1080p", m.group(2)] if m.group(1) else ["1080p"]),
-        ResParser(re.compile(r"DVD([\.\-]([\w\d]+))?$"), lambda m: [None, "DVD", m.group(2)] if m.group(1) else [None, "DVD"]),
+    RES_MAP: list[ResParser] = [
+        ResParser(
+            re.compile(r"4k([\.\-]([\w\d]+))?$"),
+            lambda m: ["2160p", m.group(2)] if m.group(1) else ["2160p"],
+        ),
+        ResParser(
+            re.compile(r"BD([\.\-]([\w\d]+))?$"),
+            lambda m: ["1080p", m.group(2)] if m.group(1) else ["1080p"],
+        ),
+        ResParser(
+            re.compile(r"DVD([\.\-]([\w\d]+))?$"),
+            lambda m: [None, "DVD", m.group(2)] if m.group(1) else [None, "DVD"],
+        ),
         ResParser(RESOLUTION_PATTERN, lambda m: [m.group(0)]),
     ]
 
-    def _match_resolution(self, word: str) -> Tuple[Optional[str], Set[str]]:
-        tags: List[Union[str, None]] = []
+    def _match_resolution(self, word: str) -> tuple[str | None, set[str]]:
+        tags: list[str | None] = []
         for mapper in self.RES_MAP:
             match = mapper.pattern.match(word)
             if match:
-                if callable(mapper.mapping):
-                    tags = mapper.mapping(match)
-                else:
-                    tags = mapper.mapping
+                tags = mapper.mapping(match) if callable(mapper.mapping) else mapper.mapping
                 break
 
         return tags[0] if tags else None, set(t for t in tags[1:] if t)
 
     def parse(self, variant: str, video: VideoInfo) -> VideoInfo:
-        edition: Optional[str] = None
+        edition: str | None = None
 
         variant_parts = variant.split(" ")
 
@@ -104,10 +113,7 @@ class SninerVariantParser(SimpleVariantParser):
             edition = " ".join(variant_parts[1:])
         elif len(variant_parts) > 1:
             res, tags = self._match_resolution(variant_parts[-1])
-            if res or tags:
-                edition = " ".join(variant_parts[:-1])
-            else:
-                edition = variant
+            edition = " ".join(variant_parts[:-1]) if res or tags else variant
         else:
             edition = variant
 
@@ -120,7 +126,7 @@ class SninerVariantParser(SimpleVariantParser):
             tags=tags if tags else None,
         )
 
-    def _tags_to_variant(self, video: VideoInfo) -> List[str]:
+    def _tags_to_variant(self, video: VideoInfo) -> list[str]:
         variant = super()._tags_to_variant(video)
         if variant:
             m = re.match(r"(\d{3,4})[pi]$", variant[0], flags=re.IGNORECASE)
@@ -136,22 +142,28 @@ class SninerVariantParser(SimpleVariantParser):
 
 
 class JellyfinLibrary(MediaLibrary):
-    def __init__(self, base_dir: pathlib.Path, *, variant_parser: Optional[Type[VariantParser]] = None):
+    def __init__(
+        self, base_dir: pathlib.Path, *, variant_parser: type[VariantParser] | None = None
+    ):
         super().__init__(base_dir)
-        self.variant_parser = variant_parser(self) if variant_parser else SninerVariantParser(self)
+        self.variant_parser = (
+            variant_parser(self) if variant_parser else SninerVariantParser(self)
+        )
 
     @classmethod
     def shortname(cls) -> str:
         return "jellyfin"
 
-    def parse_movie_path(self, path: pathlib.Path) -> Optional[MovieInfo]:
+    def parse_movie_path(self, path: pathlib.Path) -> MovieInfo | None:
         name = path.name
         for regex in JELLYFIN_MOVIE_PATTERNS:
             match = regex.match(name)
             if match:
                 title = match.group("title").strip()
                 year = match.group("year") if "year" in match.groupdict() else None
-                provider_id = match.group("provider_id") if "provider_id" in match.groupdict() else None
+                provider_id = (
+                    match.group("provider_id") if "provider_id" in match.groupdict() else None
+                )
                 provider = movie_id = None
                 if provider_id:
                     provider, movie_id = provider_id.split("-", 1)
@@ -168,12 +180,9 @@ class JellyfinLibrary(MediaLibrary):
         return " ".join(parts)
 
     def video_name(self, movie: MovieInfo, video: VideoInfo) -> str:
-        return self.variant_parser.video_name(
-            self.movie_name(movie),
-            video
-        )
+        return self.variant_parser.video_name(self.movie_name(movie), video)
 
-    def parse_video_path(self, path: pathlib.Path) -> Optional[VideoInfo]:
+    def parse_video_path(self, path: pathlib.Path) -> VideoInfo | None:
         base_name = path.stem
         video = VideoInfo(extension=path.suffix)
         parts = base_name.split(" - ")  # <spc><dash><spc> is required by Jellyfin for variants

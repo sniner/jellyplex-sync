@@ -1,25 +1,26 @@
+from __future__ import annotations
+
 import logging
 import pathlib
 import re
+from collections.abc import Generator
 from dataclasses import dataclass
-from typing import Dict, Generator, List, Optional, Set, Tuple, Type
 
-from .library import (
-    ACCEPTED_VIDEO_SUFFIXES,
-    MovieInfo,
-    VideoInfo,
-    MediaLibrary,
-)
+from . import utils
 from .jellyfin import (
     JellyfinLibrary,
+)
+from .library import (
+    ACCEPTED_VIDEO_SUFFIXES,
+    MediaLibrary,
+    MovieInfo,
+    VideoInfo,
 )
 from .plex import (
     PlexLibrary,
 )
-from . import utils
 
 log = logging.getLogger(__name__)
-
 
 
 @dataclass
@@ -35,8 +36,8 @@ def scan_media_library(
     *,
     dry_run: bool = False,
     delete: bool = False,
-    stats: Optional[LibraryStats] = None,
-) -> Generator[Tuple[pathlib.Path, pathlib.Path, MovieInfo], None, None]:
+    stats: LibraryStats | None = None,
+) -> Generator[tuple[pathlib.Path, pathlib.Path, MovieInfo], None, None]:
     """Iterate over the source library and determine all movie folders.
     Yields a tuple for each movie folder:
         (source: pathlib.Path, destination: pathlib.Path, movie: MovieInfo)
@@ -45,8 +46,8 @@ def scan_media_library(
         raise ValueError("Can not transfer library into itself")
 
     stats = stats or LibraryStats()
-    movies_to_sync: Dict[str, Optional[Tuple[pathlib.Path, MovieInfo]]] = {}
-    conflicting_source_dirs: Dict[str, List[str]] = {}
+    movies_to_sync: dict[str, tuple[pathlib.Path, MovieInfo] | None] = {}
+    conflicting_source_dirs: dict[str, list[str]] = {}
 
     # Inspect source libary for movie folders to sync
     for entry, movie in source.scan():
@@ -105,7 +106,7 @@ def process_assets_folder(
     dry_run: bool = False,
     delete: bool = False,
     verbose: bool = False,
-    stats: Optional[AssetStats] = None,
+    stats: AssetStats | None = None,
 ) -> AssetStats:
     if not source_path.is_dir():
         raise ValueError(f"{source_path!s} is not a folder")
@@ -116,7 +117,7 @@ def process_assets_folder(
         else:
             target_path.mkdir(parents=True, exist_ok=True)
 
-    stats = stats if stats else AssetStats()
+    stats = stats or AssetStats()
     synced_items = {}
 
     # Hardlink missing files and dive into subfolders
@@ -183,18 +184,21 @@ def process_movie(
     target_path = target.movie_path(movie)
 
     if verbose:
-        log.info(f"Processing '{source_path.name}' → '{target_path.name}'")
+        log.info("Processing '%s' → '%s'", source_path.name, target_path.name)
 
     stats = MovieStats()
 
-    videos_to_sync: Dict[str, Tuple[pathlib.Path, pathlib.Path]] = {}
-    assets_to_sync: Dict[str, Tuple[pathlib.Path, pathlib.Path]] = {}
+    videos_to_sync: dict[str, tuple[pathlib.Path, pathlib.Path]] = {}
+    assets_to_sync: dict[str, tuple[pathlib.Path, pathlib.Path]] = {}
 
     # Scan for video files and assets
     for entry in source_path.glob("*"):
         if entry.is_file() and entry.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
             video = source.parse_video_path(entry)
-            video_path = target.video_path(movie, video or VideoInfo(extension=entry.suffix.lower()))
+            video_path = target.video_path(
+                movie,
+                video or VideoInfo(extension=entry.suffix.lower()),
+            )
             video_name = video_path.name
             if video_name in videos_to_sync:
                 log.error("Conflicting video file '%s'. Aborting.", entry.name)
@@ -253,7 +257,13 @@ def process_movie(
 
     # Sync assets folders
     for _, item in assets_to_sync.items():
-        s = process_assets_folder(item[0], item[1], delete=delete, verbose=verbose, dry_run=dry_run)
+        s = process_assets_folder(
+            item[0],
+            item[1],
+            delete=delete,
+            verbose=verbose,
+            dry_run=dry_run,
+        )
         stats.asset_items_total += s.files_total
         stats.asset_items_linked += s.files_linked
         stats.asset_items_removed += s.items_removed
@@ -261,7 +271,7 @@ def process_movie(
     return stats
 
 
-def determine_library_type(path: pathlib.Path) -> Optional[Type[MediaLibrary]]:
+def determine_library_type(path: pathlib.Path) -> type[MediaLibrary] | None:
     plex_hints: int = 0
     jellyfin_hints: int = 0
     for entry in path.rglob("*"):
@@ -300,7 +310,7 @@ def sync(
     create: bool = False,
     verbose: bool = False,
     debug: bool = False,
-    convert_to: Optional[str] = None,
+    convert_to: str | None = None,
 ) -> int:
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -311,7 +321,9 @@ def sync(
     if not convert_to or convert_to == "auto":
         source_type = determine_library_type(source_path)
         if not source_type:
-            log.error("Unable to determine source library type, please provide --convert-to option")
+            log.error(
+                "Unable to determine source library type, please provide --convert-to option"
+            )
             return 1
         target_type = PlexLibrary if source_type == JellyfinLibrary else JellyfinLibrary
     elif convert_to in (JellyfinLibrary.shortname(), PlexLibrary.shortname()):
@@ -326,9 +338,14 @@ def sync(
     if dry_run:
         log.info("SOURCE %s", source_lib.base_dir)
         log.info("TARGET %s", target_lib.base_dir)
-        log.info("CONVERTING %s TO %s", source_lib.shortname().capitalize(), target_lib.shortname().capitalize())
+        log.info(
+            "CONVERTING %s TO %s",
+            source_lib.shortname().capitalize(),
+            target_lib.shortname().capitalize(),
+        )
     else:
-        log.info("Syncing '%s' (%s) to '%s' (%s)",
+        log.info(
+            "Syncing '%s' (%s) to '%s' (%s)",
             source_lib.base_dir,
             source_lib.shortname().capitalize(),
             target_lib.base_dir,
@@ -351,7 +368,9 @@ def sync(
     stat_items_removed: int = 0
     lib_stats = LibraryStats()
 
-    for src, _, movie in scan_media_library(source_lib, target_lib, delete=delete, dry_run=dry_run, stats=lib_stats):
+    for src, _, movie in scan_media_library(
+        source_lib, target_lib, delete=delete, dry_run=dry_run, stats=lib_stats
+    ):
         s = process_movie(
             source_lib,
             target_lib,
