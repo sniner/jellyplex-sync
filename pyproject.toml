@@ -1,17 +1,30 @@
 [project]
 name = "jellyplex-sync"
-version = "0.1.2"
+version = "0.1.3"
 description = "Convert your media library between Jellyfin and Plex formats by creating a hard-linked mirror"
-readme = "README.md"
 authors = [{ name = "Stefan Schönberger", email = "mail@sniner.dev" }]
 requires-python = ">=3.12"
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
 dependencies = []
 
-[tool.poetry]
-packages = [{ include = "jellyplex", from = "src" }]
+[project.scripts]
+jellyplex-sync = "jellyplex_sync.cli.sync:main"
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.3.5"
+[dependency-groups]
+dev = ["pytest>=8.3.5,<9"]
+
+[tool.uv]
+default-groups = "all"
+
+[build-system]
+requires = ["uv_build>=0.10.4,<0.11.0"]
+build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 addopts = "-ra -q"
@@ -21,10 +34,3 @@ testpaths = ["tests"]
 venvPath = "."
 venv = ".venv"
 disableBytesTypePromotions = true
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
-
-[tool.poetry.scripts]
-jellyplex-sync = "jellyplex.cli.sync:main"

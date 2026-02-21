@@ -1,7 +1,7 @@
 from pathlib import Path
 import pytest
 
-import jellyplex as jp
+import jellyplex_sync as jp
 
 @pytest.fixture
 def plib() -> jp.MediaLibrary:

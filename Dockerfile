@@ -1,10 +1,11 @@
 FROM python:3.13-slim AS builder
 
 WORKDIR /app
-COPY . /app/
+COPY pyproject.toml uv.lock README.md /app/
+COPY src/ /app/src/
 
-RUN pip install --no-cache-dir poetry
-RUN poetry build --format wheel --output dist
+RUN pip install --no-cache-dir uv
+RUN uv build --wheel --out-dir dist
 
 FROM python:3.13-alpine AS runtime
 

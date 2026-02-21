@@ -1,7 +1,7 @@
 from pathlib import Path
 import pytest
 
-from jellyplex import utils
+from jellyplex_sync import utils
 
 def test_absolute_common_path():
     root = Path("/")

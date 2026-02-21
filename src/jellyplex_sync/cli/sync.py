@@ -5,7 +5,7 @@ import logging
 import pathlib
 import sys
 
-import jellyplex as jp
+import jellyplex_sync as jp
 
 
 def main() -> None:
