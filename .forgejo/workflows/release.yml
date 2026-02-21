@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: https://github.com/actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: https://github.com/astral-sh/setup-uv@v5
+
+      - name: Run Tests
+        run: uv run pytest
+
+  build-and-release:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout
+        uses: https://github.com/actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: https://github.com/astral-sh/setup-uv@v5
+
+      - name: Build Packages
+        run: uv build
+
+      - name: Create Release
+        uses: https://github.com/softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
