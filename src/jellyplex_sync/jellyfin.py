@@ -72,7 +72,7 @@ class SimpleVariantParser(VariantParser):
 
 @dataclass
 class ResParser:
-    pattern: re.Pattern
+    pattern: re.Pattern[str]
     mapping: Callable[[re.Match[str]], list[str | None]] | list[str | None]
 
 
@@ -101,7 +101,7 @@ class SninerVariantParser(SimpleVariantParser):
                 tags = mapper.mapping(match) if callable(mapper.mapping) else mapper.mapping
                 break
 
-        return tags[0] if tags else None, set(t for t in tags[1:] if t)
+        return tags[0] if tags else None, {t for t in tags[1:] if t}
 
     def parse(self, variant: str, video: VideoInfo) -> VideoInfo:
         edition: str | None = None
