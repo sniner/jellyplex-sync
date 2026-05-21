@@ -170,6 +170,70 @@ class MovieStats:
     asset_items_removed: int = 0
 
 
+def _ensure_dir(path: pathlib.Path, *, dry_run: bool) -> None:
+    if path.exists():
+        return
+    if dry_run:
+        log.info("MKDIR  %s", path)
+    else:
+        path.mkdir(parents=True, exist_ok=True)
+
+
+def _link_video(
+    source: pathlib.Path,
+    target: pathlib.Path,
+    *,
+    dry_run: bool,
+    verbose: bool,
+) -> bool:
+    """Hardlink source to target, replacing any existing file at target.
+
+    Returns True if a (re)link happened, False if target already pointed at source.
+    """
+    if target.exists():
+        if target.samefile(source):
+            if verbose:
+                log.info("Target video file '%s' already exists", target.name)
+            return False
+        log.info("Replacing video file '%s' → '%s'", source.name, target.name)
+        if dry_run:
+            log.info("DELETE %s", target)
+        else:
+            target.unlink()
+    if dry_run:
+        log.info("LINK   %s", target)
+    else:
+        log.info("Linking video file '%s' → '%s'", source.name, target.name)
+        target.hardlink_to(source)
+    return True
+
+
+def _remove_strays(
+    target_path: pathlib.Path,
+    base_dir: pathlib.Path,
+    keep: set[str],
+    *,
+    dry_run: bool,
+) -> int:
+    if not target_path.is_dir():
+        return 0
+    removed = 0
+    for entry in target_path.iterdir():
+        if entry.name in keep:
+            continue
+        if dry_run:
+            log.info("DELETE %s", entry)
+        else:
+            log.info(
+                "Removing stray item '%s' in movie folder '%s'",
+                entry.name,
+                target_path.relative_to(base_dir),
+            )
+            utils.remove(entry)
+        removed += 1
+    return removed
+
+
 def process_movie(
     source: MediaLibrary,
     target: MediaLibrary,
@@ -186,79 +250,40 @@ def process_movie(
         log.info("Processing '%s' → '%s'", source_path.name, target_path.name)
 
     stats = MovieStats()
-
     videos_to_sync: dict[str, tuple[pathlib.Path, pathlib.Path]] = {}
     assets_to_sync: dict[str, tuple[pathlib.Path, pathlib.Path]] = {}
 
-    # Scan for video files and assets
     for entry in source_path.glob("*"):
         if entry.is_file() and entry.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
             video = source.parse_video_path(entry)
             video_path = target.video_path(movie, video)
-            video_name = video_path.name
-            if video_name in videos_to_sync:
+            if video_path.name in videos_to_sync:
                 log.error("Conflicting video file '%s'. Aborting.", entry.name)
                 return MovieStats()
-            videos_to_sync[video_name] = (entry, video_path)
+            videos_to_sync[video_path.name] = (entry, video_path)
             stats.videos_total += 1
         elif entry.is_dir():
-            dir_name = entry.name
-            # TODO: Just a quick fix for selecting and manipulating directories
-            if dir_name.startswith("."):
-                log.debug("Ignoring asset folder '%s'", dir_name)
+            # Skip dotfolders (e.g. .DS_Store, .stversions)
+            if entry.name.startswith("."):
+                log.debug("Ignoring asset folder '%s'", entry.name)
                 continue
-            assets_to_sync[dir_name] = (entry, target_path / dir_name)
+            assets_to_sync[entry.name] = (entry, target_path / entry.name)
 
-    if not target_path.exists():
-        if dry_run:
-            log.info("MKDIR  %s", target_path)
-        else:
-            target_path.mkdir(parents=True, exist_ok=True)
+    _ensure_dir(target_path, dry_run=dry_run)
 
-    # Hardlink missing video files
-    for _video_name, item in videos_to_sync.items():
-        if item[1].exists():
-            if item[1].samefile(item[0]):
-                if verbose:
-                    log.info("Target video file '%s' already exists", item[1].name)
-                continue
-            else:
-                log.info("Replacing video file '%s' → '%s'", item[0].name, item[1].name)
-                if dry_run:
-                    log.info("DELETE %s", item[1])
-                else:
-                    item[1].unlink()
-        if dry_run:
-            log.info("LINK   %s", item[1])
-        else:
-            log.info("Linking video file '%s' → '%s'", item[0].name, item[1].name)
-            item[1].hardlink_to(item[0])
-        stats.videos_linked += 1
+    for src_video, dst_video in videos_to_sync.values():
+        if _link_video(src_video, dst_video, dry_run=dry_run, verbose=verbose):
+            stats.videos_linked += 1
 
-    if delete and target_path.is_dir():
-        # Remove stray items
-        for entry in target_path.iterdir():
-            if entry.name in videos_to_sync or entry.name in assets_to_sync:
-                continue
-            if dry_run:
-                log.info("DELETE %s", entry)
-            else:
-                log.info(
-                    "Removing stray item '%s' in movie folder '%s'",
-                    entry.name,
-                    target_path.relative_to(target.base_dir),
-                )
-                utils.remove(entry)
-            stats.items_removed += 1
+    if delete:
+        keep = set(videos_to_sync) | set(assets_to_sync)
+        stats.items_removed += _remove_strays(
+            target_path, target.base_dir, keep, dry_run=dry_run,
+        )
 
-    # Sync assets folders
-    for _, item in assets_to_sync.items():
+    for src_asset, dst_asset in assets_to_sync.values():
         s = process_assets_folder(
-            item[0],
-            item[1],
-            delete=delete,
-            verbose=verbose,
-            dry_run=dry_run,
+            src_asset, dst_asset, delete=delete, verbose=verbose, dry_run=dry_run,
         )
         stats.asset_items_total += s.files_total
         stats.asset_items_linked += s.files_linked
