@@ -363,10 +363,9 @@ def sync(
             log.error("Target directory '%s' does not exist", target_lib.base_dir)
             return 1
 
-    stat_movies: int = 0
-    stat_items_linked: int = 0
-    stat_items_removed: int = 0
     lib_stats = LibraryStats()
+    items_linked = 0
+    items_removed = 0
 
     for src, _, movie in scan_media_library(
         source_lib, target_lib, delete=delete, dry_run=dry_run, stats=lib_stats
@@ -380,16 +379,15 @@ def sync(
             verbose=verbose,
             dry_run=dry_run,
         )
-        stat_movies += 1
-        stat_items_linked += s.asset_items_linked + s.videos_linked
-        stat_items_removed += s.asset_items_removed + s.items_removed
+        items_linked += s.asset_items_linked + s.videos_linked
+        items_removed += s.asset_items_removed + s.items_removed
 
-    stat_items_removed += lib_stats.items_removed
+    items_removed += lib_stats.items_removed
 
     summary = (
-        f"Summary: {stat_movies} movies found, "
-        f"{stat_items_linked} files updated, "
-        f"{stat_items_removed} files removed."
+        f"Summary: {lib_stats.movies_processed} of {lib_stats.movies_total} movies synced, "
+        f"{items_linked} files updated, "
+        f"{items_removed} files removed."
     )
     logging.info(summary)
 
