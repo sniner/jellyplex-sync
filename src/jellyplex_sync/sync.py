@@ -14,7 +14,6 @@ from .library import (
     ACCEPTED_VIDEO_SUFFIXES,
     MediaLibrary,
     MovieInfo,
-    VideoInfo,
 )
 from .plex import (
     PlexLibrary,
@@ -195,10 +194,7 @@ def process_movie(
     for entry in source_path.glob("*"):
         if entry.is_file() and entry.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
             video = source.parse_video_path(entry)
-            video_path = target.video_path(
-                movie,
-                video or VideoInfo(extension=entry.suffix.lower()),
-            )
+            video_path = target.video_path(movie, video)
             video_name = video_path.name
             if video_name in videos_to_sync:
                 log.error("Conflicting video file '%s'. Aborting.", entry.name)

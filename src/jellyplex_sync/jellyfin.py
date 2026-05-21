@@ -182,7 +182,7 @@ class JellyfinLibrary(MediaLibrary):
     def video_name(self, movie: MovieInfo, video: VideoInfo) -> str:
         return self.variant_parser.video_name(self.movie_name(movie), video)
 
-    def parse_video_path(self, path: pathlib.Path) -> VideoInfo | None:
+    def parse_video_path(self, path: pathlib.Path) -> VideoInfo:
         base_name = path.stem
         video = VideoInfo(extension=path.suffix)
         parts = base_name.split(" - ")  # <spc><dash><spc> is required by Jellyfin for variants

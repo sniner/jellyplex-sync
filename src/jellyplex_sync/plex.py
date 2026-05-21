@@ -90,7 +90,7 @@ class PlexLibrary(MediaLibrary):
         else:
             return None
 
-    def parse_video_path(self, path: pathlib.Path) -> VideoInfo | None:
+    def parse_video_path(self, path: pathlib.Path) -> VideoInfo:
         name = path.stem
         leftover = name
 
