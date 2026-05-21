@@ -65,7 +65,7 @@ def scan_media_library(
     if conflicting_source_dirs:
         for dst, src in conflicting_source_dirs.items():
             quoted = [f"'{s}'" for s in src]
-            log.error(f"Conflicting folders: {', '.join(quoted)} → '{dst}'")
+            log.error("Conflicting folders: %s → '%s'", ", ".join(quoted), dst)
         log.info("You have to solve the conflicts first to proceed")
         return
 
@@ -410,6 +410,6 @@ def sync(
         f"{items_linked} files updated, "
         f"{items_removed} files removed."
     )
-    logging.info(summary)
+    log.info(summary)
 
     return 0
