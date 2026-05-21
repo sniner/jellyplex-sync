@@ -292,7 +292,7 @@ def process_movie(
     return stats
 
 
-def determine_library_type(path: pathlib.Path) -> type[MediaLibrary] | None:
+def guess_library_type(path: pathlib.Path) -> type[MediaLibrary] | None:
     plex_hints: int = 0
     jellyfin_hints: int = 0
     for entry in path.rglob("*"):
@@ -340,7 +340,7 @@ def sync(
     target_path = pathlib.Path(target)
 
     if not convert_to or convert_to == "auto":
-        source_type = determine_library_type(source_path)
+        source_type = guess_library_type(source_path)
         if not source_type:
             log.error(
                 "Unable to determine source library type, please provide --convert-to option"
