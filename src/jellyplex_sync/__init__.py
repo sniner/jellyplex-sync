@@ -13,3 +13,13 @@ from .plex import (
 from .sync import (
     sync,
 )
+
+__all__ = [
+    "ACCEPTED_VIDEO_SUFFIXES",
+    "JellyfinLibrary",
+    "MediaLibrary",
+    "MovieInfo",
+    "PlexLibrary",
+    "VideoInfo",
+    "sync",
+]

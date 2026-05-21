@@ -27,6 +27,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Full history is needed so `git describe` can find the previous
+          # v* tag for the commit-list release notes.
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -34,11 +38,25 @@ jobs:
       - name: Build package
         run: uv build
 
+      - name: Generate release notes from commit log
+        run: |
+          prev_tag=$(git describe --tags --abbrev=0 --match='v*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          if [ -n "$prev_tag" ]; then
+              range="${prev_tag}..${GITHUB_REF_NAME}"
+              echo "## Changes since ${prev_tag}" > release-notes.md
+          else
+              range="${GITHUB_REF_NAME}"
+              echo "## Initial release" > release-notes.md
+          fi
+          echo "" >> release-notes.md
+          git log --no-merges --pretty='- %s' "$range" >> release-notes.md
+          echo "--- release-notes.md ---"
+          cat release-notes.md
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/*.whl
             dist/*.tar.gz
-          generate_release_notes: true
-
+          body_path: release-notes.md

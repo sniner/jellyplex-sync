@@ -35,11 +35,27 @@ jobs:
       - name: Build Packages
         run: uv build
 
+      - name: Generate release notes from commit log
+        run: |
+          prev_tag=$(git describe --tags --abbrev=0 --match='v*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          if [ -n "$prev_tag" ]; then
+              range="${prev_tag}..${GITHUB_REF_NAME}"
+              echo "## Changes since ${prev_tag}" > release-notes.md
+          else
+              range="${GITHUB_REF_NAME}"
+              echo "## Initial release" > release-notes.md
+          fi
+          echo "" >> release-notes.md
+          git log --no-merges --pretty='- %s' "$range" >> release-notes.md
+          echo "--- release-notes.md ---"
+          cat release-notes.md
+
       - name: Create Release
         uses: https://github.com/softprops/action-gh-release@v2
         with:
           files: |
             dist/*.whl
             dist/*.tar.gz
+          body_path: release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
