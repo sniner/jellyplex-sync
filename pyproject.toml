@@ -5,6 +5,8 @@ description = "Convert your media library between Jellyfin and Plex formats by c
 authors = [{ name = "Stefan Schönberger", email = "stefan@sniner.dev" }]
 requires-python = ">=3.11"
 readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
