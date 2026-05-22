@@ -10,6 +10,7 @@ from . import utils
 from .jellyfin import JellyfinLibraryReader, JellyfinLibraryWriter
 from .library import (
     ACCEPTED_VIDEO_SUFFIXES,
+    CollectingReporter,
     LibraryReader,
     LibraryWriter,
     LoggingReporter,
@@ -320,6 +321,28 @@ def guess_library_type(path: pathlib.Path) -> type[LibraryReader] | None:
     return None
 
 
+def _resolve_formats(
+    source_path: pathlib.Path, convert_to: str | None
+) -> tuple[str, str] | None:
+    """Pick source and target shortnames from --convert-to or by sniffing.
+    Returns None and logs an error if the source format can't be determined."""
+    if not convert_to or convert_to == "auto":
+        source_type = guess_library_type(source_path)
+        if not source_type:
+            log.error(
+                "Unable to determine source library type, please provide --convert-to option"
+            )
+            return None
+        source_short = source_type.shortname()
+        target_short = "plex" if source_short == "jellyfin" else "jellyfin"
+        return source_short, target_short
+    if convert_to in _LIBRARY_TYPES:
+        target_short = convert_to
+        source_short = "plex" if target_short == "jellyfin" else "jellyfin"
+        return source_short, target_short
+    raise ValueError("Unknown value for parameter 'convert_to'")
+
+
 def sync(
     source: str,
     target: str,
@@ -341,20 +364,10 @@ def sync(
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
 
-    if not convert_to or convert_to == "auto":
-        source_type = guess_library_type(source_path)
-        if not source_type:
-            log.error(
-                "Unable to determine source library type, please provide --convert-to option"
-            )
-            return 1
-        source_short = source_type.shortname()
-        target_short = "plex" if source_short == "jellyfin" else "jellyfin"
-    elif convert_to in _LIBRARY_TYPES:
-        target_short = convert_to
-        source_short = "plex" if target_short == "jellyfin" else "jellyfin"
-    else:
-        raise ValueError("Unknown value for parameter 'convert_to'")
+    resolved = _resolve_formats(source_path, convert_to)
+    if resolved is None:
+        return 1
+    source_short, target_short = resolved
 
     source_reader_cls, _ = _LIBRARY_TYPES[source_short]
     _, target_writer_cls = _LIBRARY_TYPES[target_short]
@@ -421,3 +434,174 @@ def sync(
     log.info(summary)
 
     return 0
+
+
+# ---------------------------------------------------------------------------
+# diff: read-only comparison of source and target
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DiffEntry:
+    """Per-movie diff between expected target and actual target contents."""
+
+    target_movie_name: str
+    only_in_source: tuple[str, ...] = ()
+    only_in_target: tuple[str, ...] = ()
+
+
+@dataclass
+class DiffResult:
+    movies_only_in_source: tuple[str, ...] = ()
+    movies_only_in_target: tuple[str, ...] = ()
+    differing_movies: tuple[DiffEntry, ...] = ()
+    drops: tuple = ()
+
+    @property
+    def has_differences(self) -> bool:
+        return bool(
+            self.movies_only_in_source
+            or self.movies_only_in_target
+            or self.differing_movies
+        )
+
+
+def diff(
+    source: str,
+    target: str,
+    *,
+    debug: bool = False,
+    convert_to: str | None = None,
+    out=None,
+) -> int:
+    """Compare a source library against an existing target library.
+
+    Read-only: never touches the filesystem. Exit codes follow the Unix
+    `diff` convention — 0 if no differences, 1 if differences are found,
+    2 if there's a setup error.
+    """
+    import sys
+
+    if debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    out = out or sys.stdout
+    source_path = pathlib.Path(source)
+    target_path = pathlib.Path(target)
+
+    resolved = _resolve_formats(source_path, convert_to)
+    if resolved is None:
+        return 2
+    source_short, target_short = resolved
+
+    source_reader_cls, _ = _LIBRARY_TYPES[source_short]
+    _, target_writer_cls = _LIBRARY_TYPES[target_short]
+    source_reader = source_reader_cls(source_path)
+    target_writer = target_writer_cls(target_path)
+
+    if not source_reader.base_dir.is_dir():
+        log.error("Source directory '%s' does not exist", source_reader.base_dir)
+        return 2
+    if not target_writer.base_dir.is_dir():
+        log.error("Target directory '%s' does not exist", target_writer.base_dir)
+        return 2
+
+    result = _compute_diff(source_reader, target_writer)
+    _print_diff(result, source_short, target_short, source_path, target_path, out)
+    return 1 if result.has_differences else 0
+
+
+def _compute_diff(source: LibraryReader, target: LibraryWriter) -> DiffResult:
+    reporter = CollectingReporter()
+
+    expected: dict[str, set[str]] = {}
+    for source_movie_path, movie in scan(source):
+        target_movie_name = target.movie_name(movie, reporter)
+        expected_files: set[str] = set()
+        for entry in source_movie_path.glob("*"):
+            if entry.name.startswith("."):
+                continue
+            if entry.is_file() and entry.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
+                video = source.parse_video(entry)
+                expected_files.add(target.video_name(movie, video, reporter))
+            elif entry.is_file():
+                expected_files.add(entry.name)
+            elif entry.is_dir():
+                expected_files.add(entry.name)
+        expected[target_movie_name] = expected_files
+
+    actual: dict[str, set[str]] = {}
+    for entry in target.base_dir.iterdir():
+        if not entry.is_dir():
+            continue
+        actual[entry.name] = {sub.name for sub in entry.iterdir()}
+
+    only_source = sorted(set(expected) - set(actual))
+    only_target = sorted(set(actual) - set(expected))
+    differing: list[DiffEntry] = []
+    for name in sorted(set(expected) & set(actual)):
+        src_only = tuple(sorted(expected[name] - actual[name]))
+        tgt_only = tuple(sorted(actual[name] - expected[name]))
+        if src_only or tgt_only:
+            differing.append(
+                DiffEntry(
+                    target_movie_name=name,
+                    only_in_source=src_only,
+                    only_in_target=tgt_only,
+                )
+            )
+
+    return DiffResult(
+        movies_only_in_source=tuple(only_source),
+        movies_only_in_target=tuple(only_target),
+        differing_movies=tuple(differing),
+        drops=tuple(reporter.drops),
+    )
+
+
+def _print_diff(
+    result: DiffResult,
+    source_short: str,
+    target_short: str,
+    source_path: pathlib.Path,
+    target_path: pathlib.Path,
+    out,
+) -> None:
+    print(
+        f"Comparing source '{source_path}' ({source_short.capitalize()}) "
+        f"against target '{target_path}' ({target_short.capitalize()})",
+        file=out,
+    )
+    print(file=out)
+
+    if result.movies_only_in_source:
+        print(f"Movies only in source ({len(result.movies_only_in_source)}):", file=out)
+        for name in result.movies_only_in_source:
+            print(f"  + {name}", file=out)
+        print(file=out)
+
+    if result.movies_only_in_target:
+        print(f"Movies only in target ({len(result.movies_only_in_target)}):", file=out)
+        for name in result.movies_only_in_target:
+            print(f"  - {name}", file=out)
+        print(file=out)
+
+    if result.differing_movies:
+        print(f"Movies with file differences ({len(result.differing_movies)}):", file=out)
+        for entry in result.differing_movies:
+            print(f"  ~ {entry.target_movie_name}", file=out)
+            for f in entry.only_in_source:
+                print(f"      + {f}", file=out)
+            for f in entry.only_in_target:
+                print(f"      - {f}", file=out)
+        print(file=out)
+
+    if result.drops:
+        print(f"Translation losses ({len(result.drops)}):", file=out)
+        for d in result.drops:
+            key = f"{d.key}=" if d.key else ""
+            print(f"  ! {d.kind} {key}{d.value!r}: {d.reason}", file=out)
+        print(file=out)
+
+    if not result.has_differences and not result.drops:
+        print("In sync. No differences found.", file=out)

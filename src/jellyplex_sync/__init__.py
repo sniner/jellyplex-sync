@@ -28,6 +28,9 @@ from .plex import (
     PlexLibraryWriter,
 )
 from .sync import (
+    DiffEntry,
+    DiffResult,
+    diff,
     sync,
 )
 
@@ -35,6 +38,8 @@ __all__ = [
     "ACCEPTED_VIDEO_SUFFIXES",
     "CollectingReporter",
     "CopyMaterializer",
+    "DiffEntry",
+    "DiffResult",
     "Drop",
     "DropError",
     "FileMaterializer",
@@ -51,5 +56,6 @@ __all__ = [
     "Reporter",
     "StrictReporter",
     "VideoInfo",
+    "diff",
     "sync",
 ]

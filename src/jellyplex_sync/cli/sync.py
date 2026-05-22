@@ -81,7 +81,7 @@ def _build_parser() -> argparse.ArgumentParser:
     diff_p = sub.add_parser(
         "diff",
         parents=[common],
-        help="Compare source and target libraries (not yet implemented).",
+        help="Compare source and target libraries without writing anything.",
     )
     _add_io_args(diff_p)
 
@@ -172,10 +172,21 @@ def _make_materializer(mode: str) -> jp.FileMaterializer:
 
 
 def _do_diff(args: argparse.Namespace) -> int:
-    # Wired up in a later step of Paket 4; this just announces itself for now
-    # so the subcommand surface is testable.
-    logging.error("`diff` is not implemented yet; coming in a follow-up commit.")
-    return 2
+    from jellyplex_sync.sync import diff
+
+    try:
+        return diff(
+            args.source,
+            args.target,
+            debug=args.debug,
+            convert_to=args.convert_to,
+        )
+    except KeyboardInterrupt:
+        logging.info("INTERRUPTED")
+        return 10
+    except Exception as exc:
+        logging.error("Exception: %s", exc)
+        return 99
 
 
 if __name__ == "__main__":
