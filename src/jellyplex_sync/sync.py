@@ -168,6 +168,8 @@ class MovieStats:
     asset_items_total: int = 0
     asset_items_linked: int = 0
     asset_items_removed: int = 0
+    loose_files_total: int = 0
+    loose_files_linked: int = 0
 
 
 def _ensure_dir(path: pathlib.Path, *, dry_run: bool) -> None:
@@ -227,8 +229,15 @@ def process_movie(
     stats = MovieStats()
     videos_to_sync: dict[str, tuple[pathlib.Path, pathlib.Path]] = {}
     assets_to_sync: dict[str, tuple[pathlib.Path, pathlib.Path]] = {}
+    loose_to_sync: dict[str, tuple[pathlib.Path, pathlib.Path]] = {}
 
     for entry in source_path.glob("*"):
+        if entry.name.startswith("."):
+            # OS/sync-tool junk (.DS_Store, .stversions, …) — skipped in both
+            # file and folder form, consistent with historical dot-folder
+            # handling.
+            log.debug("Ignoring dot-entry '%s'", entry.name)
+            continue
         if entry.is_file() and entry.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
             video = source.parse_video(entry)
             dst_video_path = video_path(target, movie, video, reporter)
@@ -237,10 +246,14 @@ def process_movie(
                 return MovieStats()
             videos_to_sync[dst_video_path.name] = (entry, dst_video_path)
             stats.videos_total += 1
+        elif entry.is_file():
+            # Loose top-level files (poster, nfo, subtitles, user notes) are
+            # synced 1:1 with their original name. Pre-0.2.0 they were
+            # silently dropped, which made jellyplex-sync unsafe for
+            # migrations.
+            loose_to_sync[entry.name] = (entry, target_path / entry.name)
+            stats.loose_files_total += 1
         elif entry.is_dir():
-            if entry.name.startswith("."):
-                log.debug("Ignoring asset folder '%s'", entry.name)
-                continue
             assets_to_sync[entry.name] = (entry, target_path / entry.name)
 
     _ensure_dir(target_path, dry_run=dry_run)
@@ -249,8 +262,12 @@ def process_movie(
         if materializer.materialize(src_video, dst_video, dry_run=dry_run, verbose=verbose):
             stats.videos_linked += 1
 
+    for src_file, dst_file in loose_to_sync.values():
+        if materializer.materialize(src_file, dst_file, dry_run=dry_run, verbose=verbose):
+            stats.loose_files_linked += 1
+
     if delete:
-        keep = set(videos_to_sync) | set(assets_to_sync)
+        keep = set(videos_to_sync) | set(assets_to_sync) | set(loose_to_sync)
         stats.items_removed += _remove_strays(
             target_path, target.base_dir, keep, dry_run=dry_run,
         )
@@ -391,7 +408,7 @@ def sync(
             verbose=verbose,
             dry_run=dry_run,
         )
-        items_linked += s.asset_items_linked + s.videos_linked
+        items_linked += s.asset_items_linked + s.videos_linked + s.loose_files_linked
         items_removed += s.asset_items_removed + s.items_removed
 
     items_removed += lib_stats.items_removed

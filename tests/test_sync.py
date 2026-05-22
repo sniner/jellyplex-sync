@@ -221,14 +221,14 @@ def test_process_movie_ignores_dotfolders(tmp_path: Path) -> None:
     assert not (dst / "First (1984) {imdb-tt001}" / ".hidden").exists()
 
 
-def test_process_movie_ignores_loose_files_at_top_level_today(tmp_path: Path) -> None:
-    """Pin current behavior: loose non-video files in the movie directory
-    (subtitles, nfo, poster) are silently skipped. Only the video file and
-    subdirectories are synced.
+def test_process_movie_syncs_loose_top_level_files(tmp_path: Path) -> None:
+    """Loose non-video files in the movie directory (subtitles, nfo, poster,
+    notes) are synced 1:1 to the target — they keep their original name and
+    land in the target movie folder.
 
-    This test documents the pre-0.2.0 default. Paket 4 changes this default
-    to "sync everything"; when that lands, flip the expectations rather than
-    deleting this test, so the diff makes the behavior change explicit.
+    This was the behavior change in Paket 4 (0.2.0): pre-0.2.0 these files
+    were silently dropped, which made jellyplex-sync unsafe for migrations.
+    Dotfiles like .DS_Store stay excluded, matching the dotfolder skip.
     """
     src = tmp_path / "jellyfin"
     dst = tmp_path / "plex"
@@ -241,6 +241,7 @@ def test_process_movie_ignores_loose_files_at_top_level_today(tmp_path: Path) ->
     _touch(movie_dir / "First (1984) [imdbid-tt001].en.srt", b"s")
     _touch(movie_dir / "poster.jpg", b"p")
     _touch(movie_dir / "random_note.txt", b"r")
+    _touch(movie_dir / ".DS_Store", b"junk")
     _touch(movie_dir / "extras" / "trailer.mp4", b"t")
 
     source = jp.JellyfinLibraryReader(src)
@@ -248,16 +249,22 @@ def test_process_movie_ignores_loose_files_at_top_level_today(tmp_path: Path) ->
     movie = source.parse_movie(movie_dir)
     assert movie is not None
 
-    process_movie(source, target, movie_dir, movie)
+    stats = process_movie(source, target, movie_dir, movie)
 
     target_movie = dst / "First (1984) {imdb-tt001}"
+    # Video and asset folder still work as before
     assert (target_movie / "First (1984) {imdb-tt001}.mkv").exists()
     assert (target_movie / "extras" / "trailer.mp4").exists()
-    # Loose files at the top level — silently dropped today
-    assert not (target_movie / "First (1984) [imdbid-tt001].nfo").exists()
-    assert not (target_movie / "First (1984) [imdbid-tt001].en.srt").exists()
-    assert not (target_movie / "poster.jpg").exists()
-    assert not (target_movie / "random_note.txt").exists()
+    # Loose files are now synced with their original filename
+    assert (target_movie / "First (1984) [imdbid-tt001].nfo").exists()
+    assert (target_movie / "First (1984) [imdbid-tt001].en.srt").exists()
+    assert (target_movie / "poster.jpg").exists()
+    assert (target_movie / "random_note.txt").exists()
+    # Dotfiles still excluded
+    assert not (target_movie / ".DS_Store").exists()
+
+    assert stats.loose_files_total == 4
+    assert stats.loose_files_linked == 4
 
 
 def test_process_movie_removes_stray_with_delete(tmp_path: Path) -> None:
