@@ -1,7 +1,7 @@
 FROM python:3.13-slim AS builder
 
 WORKDIR /app
-COPY pyproject.toml uv.lock README.md /app/
+COPY pyproject.toml uv.lock README.md LICENSE /app/
 COPY src/ /app/src/
 
 RUN pip install --no-cache-dir uv
