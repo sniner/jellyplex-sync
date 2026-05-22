@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
+import shutil
 from typing import Protocol
 
 log = logging.getLogger(__name__)
@@ -70,3 +71,83 @@ class HardlinkMaterializer:
             log.info("Linking '%s' → '%s'", src.name, dst.name)
             dst.hardlink_to(src)
         return True
+
+
+class CopyMaterializer:
+    """Copy bytes from `src` to `dst`. Works across filesystems.
+
+    On re-runs, skips files whose target already has the same size *and*
+    mtime as the source. That heuristic covers the realistic case where
+    a previous sync run copied the file and neither side has changed
+    since. If the source was modified (mtime advanced) or its size
+    changed, the target gets replaced. Use `ForceCopyMaterializer`
+    instead to bypass the check entirely.
+    """
+
+    name = "copy"
+
+    def materialize(
+        self,
+        src: pathlib.Path,
+        dst: pathlib.Path,
+        *,
+        dry_run: bool = False,
+        verbose: bool = False,
+    ) -> bool:
+        if dst.exists() and _same_size_and_mtime(src, dst):
+            if verbose:
+                log.info("Target '%s' is up to date", dst.name)
+            return False
+        return _copy(src, dst, dry_run=dry_run, replaces_existing=dst.exists())
+
+
+class ForceCopyMaterializer:
+    """Copy bytes from `src` to `dst` unconditionally.
+
+    No size/mtime check; the target is always rewritten. Use when the
+    `CopyMaterializer` heuristic isn't trustworthy in your environment
+    (e.g. mtimes were tampered with, or you want absolute certainty
+    that the bytes on disk match the source).
+    """
+
+    name = "force-copy"
+
+    def materialize(
+        self,
+        src: pathlib.Path,
+        dst: pathlib.Path,
+        *,
+        dry_run: bool = False,
+        verbose: bool = False,
+    ) -> bool:
+        _ = verbose  # force-copy always logs the copy; verbose flag has no effect
+        return _copy(src, dst, dry_run=dry_run, replaces_existing=dst.exists())
+
+
+def _same_size_and_mtime(a: pathlib.Path, b: pathlib.Path) -> bool:
+    a_stat = a.stat()
+    b_stat = b.stat()
+    return a_stat.st_size == b_stat.st_size and a_stat.st_mtime == b_stat.st_mtime
+
+
+def _copy(
+    src: pathlib.Path,
+    dst: pathlib.Path,
+    *,
+    dry_run: bool,
+    replaces_existing: bool,
+) -> bool:
+    if replaces_existing:
+        if dry_run:
+            log.info("DELETE %s", dst)
+        else:
+            log.info("Replacing '%s' → '%s'", src.name, dst.name)
+            dst.unlink()
+    if dry_run:
+        log.info("COPY   %s", dst)
+    else:
+        log.info("Copying '%s' → '%s'", src.name, dst.name)
+        # copy2 preserves mtime/atime/permissions so the CopyMaterializer's
+        # size+mtime skip logic actually works on the next run.
+        shutil.copy2(src, dst)
+    return True

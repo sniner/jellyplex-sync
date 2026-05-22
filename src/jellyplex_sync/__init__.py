@@ -14,7 +14,9 @@ from .library import (
     StrictReporter,
 )
 from .materializer import (
+    CopyMaterializer,
     FileMaterializer,
+    ForceCopyMaterializer,
     HardlinkMaterializer,
 )
 from .model import (
@@ -32,9 +34,11 @@ from .sync import (
 __all__ = [
     "ACCEPTED_VIDEO_SUFFIXES",
     "CollectingReporter",
+    "CopyMaterializer",
     "Drop",
     "DropError",
     "FileMaterializer",
+    "ForceCopyMaterializer",
     "HardlinkMaterializer",
     "JellyfinLibraryReader",
     "JellyfinLibraryWriter",

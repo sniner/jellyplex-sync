@@ -1,0 +1,137 @@
+import os
+from pathlib import Path
+
+import pytest
+
+import jellyplex_sync as jp
+
+
+def _touch(path: Path, content: bytes = b"x") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    return path
+
+
+# ---------------------------------------------------------------------------
+# HardlinkMaterializer
+# ---------------------------------------------------------------------------
+
+
+def test_hardlink_creates_link(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+
+    mat = jp.HardlinkMaterializer()
+    assert mat.materialize(src, dst) is True
+    assert dst.exists()
+    assert dst.samefile(src)
+
+
+def test_hardlink_skips_when_already_linked(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+    dst.hardlink_to(src)
+
+    mat = jp.HardlinkMaterializer()
+    assert mat.materialize(src, dst) is False
+
+
+def test_hardlink_replaces_unrelated_file(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = _touch(tmp_path / "dst.mkv", b"different")
+
+    mat = jp.HardlinkMaterializer()
+    assert mat.materialize(src, dst) is True
+    assert dst.samefile(src)
+
+
+# ---------------------------------------------------------------------------
+# CopyMaterializer
+# ---------------------------------------------------------------------------
+
+
+def test_copy_creates_independent_file(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+
+    mat = jp.CopyMaterializer()
+    assert mat.materialize(src, dst) is True
+    assert dst.read_bytes() == b"abc"
+    assert not dst.samefile(src), "copy must produce an independent inode"
+
+
+def test_copy_preserves_mtime(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    os.utime(src, (1_700_000_000, 1_700_000_000))
+    dst = tmp_path / "dst.mkv"
+
+    jp.CopyMaterializer().materialize(src, dst)
+    assert dst.stat().st_mtime == src.stat().st_mtime
+
+
+def test_copy_skips_when_size_and_mtime_match(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+    mat = jp.CopyMaterializer()
+    mat.materialize(src, dst)  # first run: copies
+
+    assert mat.materialize(src, dst) is False, "second run with same src must be a no-op"
+
+
+def test_copy_replaces_when_size_differs(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = _touch(tmp_path / "dst.mkv", b"abcdef")  # bigger
+    os.utime(dst, (src.stat().st_atime, src.stat().st_mtime))  # same mtime
+
+    mat = jp.CopyMaterializer()
+    assert mat.materialize(src, dst) is True
+    assert dst.read_bytes() == b"abc"
+
+
+def test_copy_replaces_when_mtime_differs(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = _touch(tmp_path / "dst.mkv", b"abc")  # same size
+    os.utime(dst, (1_500_000_000, 1_500_000_000))  # older mtime
+
+    mat = jp.CopyMaterializer()
+    assert mat.materialize(src, dst) is True
+
+
+# ---------------------------------------------------------------------------
+# ForceCopyMaterializer
+# ---------------------------------------------------------------------------
+
+
+def test_force_copy_copies_even_when_identical(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+    jp.CopyMaterializer().materialize(src, dst)
+    dst_inode_before = dst.stat().st_ino
+
+    assert jp.ForceCopyMaterializer().materialize(src, dst) is True
+    # The file got rewritten, so the inode is fresh.
+    assert dst.stat().st_ino != dst_inode_before
+
+
+def test_force_copy_creates_independent_file(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+    assert jp.ForceCopyMaterializer().materialize(src, dst) is True
+    assert not dst.samefile(src)
+
+
+# ---------------------------------------------------------------------------
+# Dry run
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "mat",
+    [jp.HardlinkMaterializer(), jp.CopyMaterializer(), jp.ForceCopyMaterializer()],
+    ids=lambda m: m.name,
+)
+def test_dry_run_touches_nothing(tmp_path: Path, mat):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+    mat.materialize(src, dst, dry_run=True)
+    assert not dst.exists()

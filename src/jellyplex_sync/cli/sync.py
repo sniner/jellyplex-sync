@@ -39,6 +39,29 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Mirror a source library into the target layout (default).",
     )
     _add_io_args(sync_p)
+    mode = sync_p.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--hardlink",
+        dest="mode",
+        action="store_const",
+        const="hardlink",
+        help="Use hardlinks (default; needs source and target on the same filesystem).",
+    )
+    mode.add_argument(
+        "--copy",
+        dest="mode",
+        action="store_const",
+        const="copy",
+        help="Copy files; on re-runs skip files whose size and mtime already match.",
+    )
+    mode.add_argument(
+        "--force-copy",
+        dest="mode",
+        action="store_const",
+        const="force-copy",
+        help="Always copy and overwrite, regardless of existing target state.",
+    )
+    sync_p.set_defaults(mode="hardlink")
     sync_p.add_argument(
         "--dry-run",
         action="store_true",
@@ -117,6 +140,7 @@ def main() -> None:
 
 
 def _do_sync(args: argparse.Namespace) -> int:
+    materializer = _make_materializer(args.mode)
     try:
         return jp.sync(
             args.source,
@@ -127,6 +151,7 @@ def _do_sync(args: argparse.Namespace) -> int:
             verbose=args.verbose,
             debug=args.debug,
             convert_to=args.convert_to,
+            materializer=materializer,
         )
     except KeyboardInterrupt:
         logging.info("INTERRUPTED")
@@ -134,6 +159,16 @@ def _do_sync(args: argparse.Namespace) -> int:
     except Exception as exc:
         logging.error("Exception: %s", exc)
         return 99
+
+
+def _make_materializer(mode: str) -> jp.FileMaterializer:
+    if mode == "hardlink":
+        return jp.HardlinkMaterializer()
+    if mode == "copy":
+        return jp.CopyMaterializer()
+    if mode == "force-copy":
+        return jp.ForceCopyMaterializer()
+    raise ValueError(f"unknown materialization mode: {mode!r}")
 
 
 def _do_diff(args: argparse.Namespace) -> int:
