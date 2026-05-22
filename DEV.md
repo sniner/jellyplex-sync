@@ -136,6 +136,43 @@ its scanner.
 When the migration mode (Paket 4) lands, this caveat needs to be
 called out prominently in user-facing documentation.
 
+## Resolution label choices
+
+Jellyfin's version-label sort rule has a subtle interaction with the
+specific labels we emit, and the choice is deliberate.
+
+The rule: version labels ending in `p` or `i` sort **descending by
+resolution**; everything else sorts **alphabetically** (ASCII).
+
+When syncing Plex → Jellyfin, the resolution `[tags]` get mapped to
+shorthand labels: `[2160p]` → `4k`, `[1080p]` → `BD`, `[720p]` → `720p`,
+`[DVD]` → `DVD`. These shorthands are chosen so that the alphabetical
+sort order puts the *highest* quality first:
+
+```
+4k  <  BD  <  DVD     (digits sort before uppercase letters in ASCII)
+```
+
+Result in the Jellyfin UI: the highest-quality version is listed first
+and gets auto-selected when the user opens the movie.
+
+### Why not DVD/SDR/FHD/UHD?
+
+The "modern" set DVD/SDR/FHD/UHD sorts as
+`DVD < FHD < SDR < UHD` alphabetically — so a movie with a DVD and a
+UHD copy would default-play the DVD. That ergonomic regression
+outweighs the consistency win of more accurate terminology, so we keep
+the existing labels.
+
+### Why not 1080p/2160p/etc.?
+
+`480p`/`720p`/`1080p`/`2160p` would also work — they trigger
+Jellyfin's descending-by-resolution sort via the `p` suffix. The reason
+we don't switch is that existing user libraries already use the
+marketing labels (DVD/BD/4k) in their filenames, and any change would
+require either a breaking rename pass or a permanent dual mapping.
+Either is a 0.2.0+ topic that needs more thought before we touch it.
+
 ## Edge cases worth remembering
 
 - **Filename ≡ folder name** is enforced by both systems; the scanner
