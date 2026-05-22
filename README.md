@@ -85,11 +85,15 @@ jellyplex-sync --dry-run --verbose --delete --create ~/Media/Jellyfin ~/Media/Pl
 docker run --rm -v /your/media:/mnt ghcr.io/sniner/jellyplex-sync:latest /mnt/source /mnt/target
 ```
 
-The repo ships with a small demo library you can use to try the tool:
+To try the tool, generate a small Plex-format library with
+[jellyplex-gen](https://pypi.org/project/jellyplex-gen/) and point the
+sync at it:
 
 ```bash
+uvx jellyplex-gen plex --seed=demo --movies=20 --out=./demo-plex
+mkdir ./demo-jellyfin
 docker run --rm -v .:/mnt ghcr.io/sniner/jellyplex-sync:latest \
-    /mnt/DEMO_PLEX_LIBRARY/Movies /mnt/DEMO_PLEX_LIBRARY/Jellyfin
+    /mnt/demo-plex /mnt/demo-jellyfin
 ```
 
 > **Bind-mount note:** Both source and target paths must be reachable inside the container **through the same bind mount**, otherwise hardlinks between them cannot be created.
