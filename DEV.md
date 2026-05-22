@@ -194,6 +194,112 @@ marketing labels (DVD/BD/4k) in their filenames, and any change would
 require either a breaking rename pass or a permanent dual mapping.
 Either is a 0.2.0+ topic that needs more thought before we touch it.
 
+## Translation engine architecture
+
+> **Status:** target shape for Paket 1 (0.2.0). Not yet reflected in
+> code — today, `MediaLibrary` carries both reader and writer roles
+> and translation logic lives inside `jellyfin.py`. The refactor moves
+> things to match this shape without changing observable behavior.
+
+### Pipeline
+
+```
+[PlexPath]     → [PlexLibraryReader]     → Model → [JellyfinLibraryWriter] → [JellyfinPath]
+[JellyfinPath] → [JellyfinLibraryReader] → Model → [PlexLibraryWriter]     → [PlexPath]
+```
+
+The intermediate model is library-neutral. Each library contributes a
+`LibraryReader` / `LibraryWriter` pair. Adding support for a third
+media server is one Reader + one Writer; nothing else changes.
+
+### Intermediate model (`model.py`)
+
+```python
+@dataclass(frozen=True)
+class VideoInfo:
+    extension: str
+    attributes: dict[str, str] = field(default_factory=dict)
+    tags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class MovieInfo:
+    title: str
+    year: str | None = None
+    attributes: dict[str, str] = field(default_factory=dict)
+    tags: tuple[str, ...] = ()
+    videos: tuple[VideoInfo, ...] = ()
+```
+
+- `attributes` carries `{key-value}` info (provider IDs, edition,
+  future keys).
+- `tags` carries free-form `[...]` markers (resolution shorthand,
+  source markers, user notes).
+- `videos` is a tuple because a single movie folder can hold multiple
+  variants (different resolutions, editions).
+
+The Reader is liberal: anything it can't classify still gets a place
+in `attributes` or `tags`, so nothing gets lost on the input side.
+
+### Reader / Writer protocols (`library.py`)
+
+```python
+class LibraryReader(Protocol):
+    base_dir: Path
+    @classmethod
+    def shortname(cls) -> str: ...
+    def parse_movie(self, path: Path) -> MovieInfo | None: ...
+    def parse_video(self, path: Path) -> VideoInfo: ...
+
+
+class LibraryWriter(Protocol):
+    base_dir: Path
+    @classmethod
+    def shortname(cls) -> str: ...
+    def movie_path(self, movie: MovieInfo, reporter: Reporter) -> Path: ...
+    def video_path(self, movie: MovieInfo, video: VideoInfo, reporter: Reporter) -> Path: ...
+```
+
+The Reader has no Reporter — it accepts what's there and stuffs
+unrecognised content into the generic model fields. The Writer takes
+a Reporter because it must make lossy decisions and the caller needs
+to know about them.
+
+### Reporter
+
+```python
+@dataclass(frozen=True)
+class Drop:
+    kind: Literal["tag", "attribute"]
+    key: str | None       # attribute key, or None for tags
+    value: str
+    reason: str           # "not expressible in target", "exceeds length limit", ...
+
+
+class Reporter(Protocol):
+    def drop(self, drop: Drop) -> None: ...
+    def info(self, message: str) -> None: ...
+```
+
+Concrete reporters for the three usable modes:
+
+| Mode | Reporter | Behavior |
+|---|---|---|
+| lenient (default) | `LoggingReporter` | log each drop at warning level, continue |
+| strict | `StrictReporter` | raise on first drop |
+| report-only | `CollectingReporter` | accumulate drops for later inspection; used by `--diff` (Paket 4) |
+
+### Where today's code moves
+
+| Today | After Paket 1 |
+|---|---|
+| `MediaLibrary` (ABC, dual-role) | `LibraryReader`, `LibraryWriter` (split) |
+| `MovieInfo`, `VideoInfo` (library-specific fields) | generalised model in `model.py` |
+| `VariantParser` family in `jellyfin.py` (heuristic ` - X` split) | `JellyfinLibraryReader` |
+| variant rendering in `jellyfin.py` | `JellyfinLibraryWriter` |
+| `PlexLibrary.parse_*` and naming | `PlexLibraryReader` / `PlexLibraryWriter` |
+| `sync.py` orchestration | unchanged at the call-site level; Reader/Writer instances replace the dual-role library, Reporter is threaded through |
+
 ## Edge cases worth remembering
 
 - **Filename ≡ folder name** is enforced by both systems; the scanner
