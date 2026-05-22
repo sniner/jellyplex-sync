@@ -103,4 +103,4 @@ def test_end_to_end_auto_detects_plex_source(plex_source, tmp_path: Path):
     dst.mkdir()
 
     detected = guess_library_type(src)
-    assert detected is jp.PlexLibrary
+    assert detected is jp.PlexLibraryReader

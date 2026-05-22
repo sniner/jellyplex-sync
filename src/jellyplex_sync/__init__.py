@@ -1,14 +1,25 @@
 from .jellyfin import (
-    JellyfinLibrary,
+    JellyfinLibraryReader,
+    JellyfinLibraryWriter,
 )
 from .library import (
     ACCEPTED_VIDEO_SUFFIXES,
-    MediaLibrary,
+    CollectingReporter,
+    Drop,
+    DropError,
+    LibraryReader,
+    LibraryWriter,
+    LoggingReporter,
+    Reporter,
+    StrictReporter,
+)
+from .model import (
     MovieInfo,
     VideoInfo,
 )
 from .plex import (
-    PlexLibrary,
+    PlexLibraryReader,
+    PlexLibraryWriter,
 )
 from .sync import (
     sync,
@@ -16,10 +27,19 @@ from .sync import (
 
 __all__ = [
     "ACCEPTED_VIDEO_SUFFIXES",
-    "JellyfinLibrary",
-    "MediaLibrary",
+    "CollectingReporter",
+    "Drop",
+    "DropError",
+    "JellyfinLibraryReader",
+    "JellyfinLibraryWriter",
+    "LibraryReader",
+    "LibraryWriter",
+    "LoggingReporter",
     "MovieInfo",
-    "PlexLibrary",
+    "PlexLibraryReader",
+    "PlexLibraryWriter",
+    "Reporter",
+    "StrictReporter",
     "VideoInfo",
     "sync",
 ]

@@ -31,8 +31,8 @@ def test_scan_media_library_yields_each_movie(tmp_path: Path) -> None:
     (src / "First (1984) [imdbid-tt001]").mkdir()
     (src / "Second (1990) [imdbid-tt002]").mkdir()
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
 
     results = list(scan_media_library(source, target))
 
@@ -55,8 +55,8 @@ def test_scan_media_library_skips_conflicting_sources(tmp_path: Path) -> None:
     (src / "Movie (2000) [imdbid-tt001]").mkdir()
     (src / "Movie (2000) - [imdbid-tt001]").mkdir()
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
     stats = LibraryStats()
 
     results = list(scan_media_library(source, target, stats=stats))
@@ -74,8 +74,8 @@ def test_scan_media_library_removes_stray_with_delete(tmp_path: Path) -> None:
     stray = dst / "Stray (1999) {imdb-tt999}"
     stray.mkdir()
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
     stats = LibraryStats()
 
     list(scan_media_library(source, target, delete=True, stats=stats))
@@ -93,8 +93,8 @@ def test_scan_media_library_dry_run_leaves_stray(tmp_path: Path) -> None:
     stray = dst / "Stray"
     stray.mkdir()
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
 
     list(scan_media_library(source, target, delete=True, dry_run=True))
 
@@ -104,8 +104,8 @@ def test_scan_media_library_dry_run_leaves_stray(tmp_path: Path) -> None:
 def test_scan_media_library_rejects_same_base_dir(tmp_path: Path) -> None:
     src = tmp_path / "lib"
     src.mkdir()
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(src)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(src)
 
     with pytest.raises(ValueError):
         list(scan_media_library(source, target))
@@ -125,9 +125,9 @@ def test_process_movie_hardlinks_video(tmp_path: Path) -> None:
     movie_dir.mkdir()
     src_video = _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"video-bytes")
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
-    movie = source.parse_movie_path(movie_dir)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
     assert movie is not None
 
     stats = process_movie(source, target, movie_dir, movie)
@@ -148,9 +148,9 @@ def test_process_movie_is_idempotent(tmp_path: Path) -> None:
     movie_dir.mkdir()
     _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"v")
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
-    movie = source.parse_movie_path(movie_dir)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
     assert movie is not None
 
     process_movie(source, target, movie_dir, movie)
@@ -169,9 +169,9 @@ def test_process_movie_dry_run_creates_nothing(tmp_path: Path) -> None:
     movie_dir.mkdir()
     _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"v")
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
-    movie = source.parse_movie_path(movie_dir)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
     assert movie is not None
 
     process_movie(source, target, movie_dir, movie, dry_run=True)
@@ -189,9 +189,9 @@ def test_process_movie_syncs_asset_folder(tmp_path: Path) -> None:
     _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"v")
     _touch(movie_dir / "extras" / "trailer.mp4", b"t")
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
-    movie = source.parse_movie_path(movie_dir)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
     assert movie is not None
 
     stats = process_movie(source, target, movie_dir, movie)
@@ -211,9 +211,9 @@ def test_process_movie_ignores_dotfolders(tmp_path: Path) -> None:
     _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"v")
     _touch(movie_dir / ".hidden" / "secret.txt", b"x")
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
-    movie = source.parse_movie_path(movie_dir)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
     assert movie is not None
 
     process_movie(source, target, movie_dir, movie)
@@ -243,9 +243,9 @@ def test_process_movie_ignores_loose_files_at_top_level_today(tmp_path: Path) ->
     _touch(movie_dir / "random_note.txt", b"r")
     _touch(movie_dir / "extras" / "trailer.mp4", b"t")
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
-    movie = source.parse_movie_path(movie_dir)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
     assert movie is not None
 
     process_movie(source, target, movie_dir, movie)
@@ -273,9 +273,9 @@ def test_process_movie_removes_stray_with_delete(tmp_path: Path) -> None:
     target_movie_dir.mkdir()
     stray_file = _touch(target_movie_dir / "leftover.txt", b"old")
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
-    movie = source.parse_movie_path(movie_dir)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
     assert movie is not None
 
     stats = process_movie(source, target, movie_dir, movie, delete=True)
@@ -348,7 +348,7 @@ def test_guess_library_type_detects_plex(tmp_path: Path) -> None:
     movie_dir.mkdir()
     _touch(movie_dir / "First (1984) {imdb-tt001}.mkv", b"v")
 
-    assert guess_library_type(tmp_path) is jp.PlexLibrary
+    assert guess_library_type(tmp_path) is jp.PlexLibraryReader
 
 
 def test_guess_library_type_detects_jellyfin(tmp_path: Path) -> None:
@@ -356,7 +356,7 @@ def test_guess_library_type_detects_jellyfin(tmp_path: Path) -> None:
     movie_dir.mkdir()
     _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"v")
 
-    assert guess_library_type(tmp_path) is jp.JellyfinLibrary
+    assert guess_library_type(tmp_path) is jp.JellyfinLibraryReader
 
 
 def test_guess_library_type_detects_plex_edition(tmp_path: Path) -> None:
@@ -364,7 +364,7 @@ def test_guess_library_type_detects_plex_edition(tmp_path: Path) -> None:
     movie_dir.mkdir()
     _touch(movie_dir / "Das Boot (1981) {edition-Director's Cut}.mkv", b"v")
 
-    assert guess_library_type(tmp_path) is jp.PlexLibrary
+    assert guess_library_type(tmp_path) is jp.PlexLibraryReader
 
 
 def test_guess_library_type_returns_none_when_unclear(tmp_path: Path) -> None:

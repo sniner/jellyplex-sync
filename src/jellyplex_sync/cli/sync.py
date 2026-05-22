@@ -23,7 +23,11 @@ def main() -> None:
     parser.add_argument(
         "--convert-to",
         type=str,
-        choices=[jp.JellyfinLibrary.shortname(), jp.PlexLibrary.shortname(), "auto"],
+        choices=[
+            jp.JellyfinLibraryReader.shortname(),
+            jp.PlexLibraryReader.shortname(),
+            "auto",
+        ],
         default="auto",
         help="Type of library to convert to ('auto' will try to determine source library type)",
     )
