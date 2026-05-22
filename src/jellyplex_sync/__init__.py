@@ -13,6 +13,10 @@ from .library import (
     Reporter,
     StrictReporter,
 )
+from .materializer import (
+    FileMaterializer,
+    HardlinkMaterializer,
+)
 from .model import (
     MovieInfo,
     VideoInfo,
@@ -30,6 +34,8 @@ __all__ = [
     "CollectingReporter",
     "Drop",
     "DropError",
+    "FileMaterializer",
+    "HardlinkMaterializer",
     "JellyfinLibraryReader",
     "JellyfinLibraryWriter",
     "LibraryReader",

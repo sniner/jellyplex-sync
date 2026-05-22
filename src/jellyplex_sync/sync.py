@@ -18,6 +18,7 @@ from .library import (
     scan,
     video_path,
 )
+from .materializer import FileMaterializer, HardlinkMaterializer
 from .model import MovieInfo
 from .plex import PlexLibraryReader, PlexLibraryWriter
 
@@ -108,6 +109,7 @@ def process_assets_folder(
     source_path: pathlib.Path,
     target_path: pathlib.Path,
     *,
+    materializer: FileMaterializer | None = None,
     dry_run: bool = False,
     delete: bool = False,
     verbose: bool = False,
@@ -115,6 +117,8 @@ def process_assets_folder(
 ) -> AssetStats:
     if not source_path.is_dir():
         raise ValueError(f"{source_path!s} is not a folder")
+
+    materializer = materializer or HardlinkMaterializer()
 
     if not target_path.exists():
         if dry_run:
@@ -128,24 +132,16 @@ def process_assets_folder(
     for entry in source_path.iterdir():
         dest = target_path / entry.name
         if entry.is_dir():
-            process_assets_folder(entry, dest, verbose=verbose, stats=stats, dry_run=dry_run)
+            process_assets_folder(
+                entry,
+                dest,
+                materializer=materializer,
+                verbose=verbose,
+                stats=stats,
+                dry_run=dry_run,
+            )
         elif entry.is_file():
-            if dest.exists():
-                if dest.samefile(entry):
-                    if verbose:
-                        log.debug("Target file '%s' already exists, skipping", entry.name)
-                else:
-                    if dry_run:
-                        log.info("RELINK %s", entry)
-                    else:
-                        dest.unlink()
-                        dest.hardlink_to(entry)
-                    stats.files_linked += 1
-            else:
-                if dry_run:
-                    log.info("LINK   %s", dest)
-                else:
-                    dest.hardlink_to(entry)
+            if materializer.materialize(entry, dest, dry_run=dry_run, verbose=verbose):
                 stats.files_linked += 1
             stats.files_total += 1
         synced_items[entry.name] = dest
@@ -183,35 +179,6 @@ def _ensure_dir(path: pathlib.Path, *, dry_run: bool) -> None:
         path.mkdir(parents=True, exist_ok=True)
 
 
-def _link_video(
-    source: pathlib.Path,
-    target: pathlib.Path,
-    *,
-    dry_run: bool,
-    verbose: bool,
-) -> bool:
-    """Hardlink source to target, replacing any existing file at target.
-
-    Returns True if a (re)link happened, False if target already pointed at source.
-    """
-    if target.exists():
-        if target.samefile(source):
-            if verbose:
-                log.info("Target video file '%s' already exists", target.name)
-            return False
-        log.info("Replacing video file '%s' → '%s'", source.name, target.name)
-        if dry_run:
-            log.info("DELETE %s", target)
-        else:
-            target.unlink()
-    if dry_run:
-        log.info("LINK   %s", target)
-    else:
-        log.info("Linking video file '%s' → '%s'", source.name, target.name)
-        target.hardlink_to(source)
-    return True
-
-
 def _remove_strays(
     target_path: pathlib.Path,
     base_dir: pathlib.Path,
@@ -244,11 +211,13 @@ def process_movie(
     source_path: pathlib.Path,
     movie: MovieInfo,
     *,
+    materializer: FileMaterializer | None = None,
     reporter: Reporter | None = None,
     dry_run: bool = False,
     delete: bool = False,
     verbose: bool = False,
 ) -> MovieStats:
+    materializer = materializer or HardlinkMaterializer()
     reporter = reporter or LoggingReporter()
     target_path = movie_path(target, movie, reporter)
 
@@ -277,7 +246,7 @@ def process_movie(
     _ensure_dir(target_path, dry_run=dry_run)
 
     for src_video, dst_video in videos_to_sync.values():
-        if _link_video(src_video, dst_video, dry_run=dry_run, verbose=verbose):
+        if materializer.materialize(src_video, dst_video, dry_run=dry_run, verbose=verbose):
             stats.videos_linked += 1
 
     if delete:
@@ -288,7 +257,12 @@ def process_movie(
 
     for src_asset, dst_asset in assets_to_sync.values():
         s = process_assets_folder(
-            src_asset, dst_asset, delete=delete, verbose=verbose, dry_run=dry_run,
+            src_asset,
+            dst_asset,
+            materializer=materializer,
+            delete=delete,
+            verbose=verbose,
+            dry_run=dry_run,
         )
         stats.asset_items_total += s.files_total
         stats.asset_items_linked += s.files_linked
@@ -340,11 +314,13 @@ def sync(
     debug: bool = False,
     convert_to: str | None = None,
     reporter: Reporter | None = None,
+    materializer: FileMaterializer | None = None,
 ) -> int:
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
     reporter = reporter or LoggingReporter()
+    materializer = materializer or HardlinkMaterializer()
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
 
@@ -409,6 +385,7 @@ def sync(
             target_writer,
             src,
             movie,
+            materializer=materializer,
             reporter=reporter,
             delete=delete,
             verbose=verbose,
