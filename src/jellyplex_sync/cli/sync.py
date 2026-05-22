@@ -7,20 +7,68 @@ import sys
 
 import jellyplex_sync as jp
 
+_SUBCOMMANDS = {"sync", "diff"}
 
-def main() -> None:
+
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Create a Plex compatible media library from a Jellyfin library."
+        prog="jellyplex-sync",
+        description="Convert a media library between Plex and Jellyfin layouts.",
     )
-    parser.add_argument(
-        "source",
-        help="Jellyfin media library",
+
+    # Flags shared by every subcommand. Use a parent parser so they can be
+    # given either before or after the subcommand name.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Show more information messages.",
     )
-    parser.add_argument(
-        "target",
-        help="Plex media library",
+    common.add_argument(
+        "--debug",
+        action="store_true",
+        help="Show debug messages.",
     )
-    parser.add_argument(
+
+    sub = parser.add_subparsers(dest="command", required=True, metavar="<command>")
+
+    sync_p = sub.add_parser(
+        "sync",
+        parents=[common],
+        help="Mirror a source library into the target layout (default).",
+    )
+    _add_io_args(sync_p)
+    sync_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done, don't change anything on disk.",
+    )
+    sync_p.add_argument(
+        "--delete",
+        action="store_true",
+        help="Remove stray folders from the target library.",
+    )
+    sync_p.add_argument(
+        "--create",
+        action="store_true",
+        help="Create the target library directory if it doesn't exist.",
+    )
+
+    diff_p = sub.add_parser(
+        "diff",
+        parents=[common],
+        help="Compare source and target libraries (not yet implemented).",
+    )
+    _add_io_args(diff_p)
+
+    return parser
+
+
+def _add_io_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("source", help="Source media library path.")
+    p.add_argument("target", help="Target media library path.")
+    p.add_argument(
         "--convert-to",
         type=str,
         choices=[
@@ -29,34 +77,28 @@ def main() -> None:
             "auto",
         ],
         default="auto",
-        help="Type of library to convert to ('auto' will try to determine source library type)",
+        help="Target format ('auto' tries to detect from the source).",
     )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show actions only, don't execute them",
-    )
-    parser.add_argument(
-        "--delete",
-        action="store_true",
-        help="Remove stray folders from target library",
-    )
-    parser.add_argument(
-        "--create",
-        action="store_true",
-        help="Create missing target library",
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Show more information messages",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Show debug messages",
-    )
-    args = parser.parse_args()
+
+
+def _inject_default_subcommand(argv: list[str]) -> list[str]:
+    """If the first positional argument isn't a known subcommand, treat the
+    call as `sync ...`. Keeps the historical invocation `jellyplex-sync
+    <source> <target>` working alongside the new `jellyplex-sync sync ...`.
+    """
+    if not argv:
+        return argv
+    first = argv[0]
+    if first.startswith("-"):
+        return argv
+    if first in _SUBCOMMANDS:
+        return argv
+    return ["sync", *argv]
+
+
+def main() -> None:
+    parser = _build_parser()
+    args = parser.parse_args(_inject_default_subcommand(sys.argv[1:]))
 
     logging.basicConfig(
         level=logging.INFO,
@@ -64,9 +106,19 @@ def main() -> None:
         format="%(levelname)s: %(asctime)s -- %(message)s",
     )
 
-    result = 0
+    if args.command == "sync":
+        result = _do_sync(args)
+    elif args.command == "diff":
+        result = _do_diff(args)
+    else:
+        parser.error(f"unknown command: {args.command!r}")
+        result = 2
+    sys.exit(result)
+
+
+def _do_sync(args: argparse.Namespace) -> int:
     try:
-        result = jp.sync(
+        return jp.sync(
             args.source,
             args.target,
             dry_run=args.dry_run,
@@ -78,11 +130,17 @@ def main() -> None:
         )
     except KeyboardInterrupt:
         logging.info("INTERRUPTED")
-        result = 10
+        return 10
     except Exception as exc:
         logging.error("Exception: %s", exc)
-        result = 99
-    sys.exit(result)
+        return 99
+
+
+def _do_diff(args: argparse.Namespace) -> int:
+    # Wired up in a later step of Paket 4; this just announces itself for now
+    # so the subcommand surface is testable.
+    logging.error("`diff` is not implemented yet; coming in a follow-up commit.")
+    return 2
 
 
 if __name__ == "__main__":
