@@ -156,6 +156,27 @@ sort order puts the *highest* quality first:
 Result in the Jellyfin UI: the highest-quality version is listed first
 and gets auto-selected when the user opens the movie.
 
+### Label construction: resolution first, edition second
+
+When a Plex source carries both a resolution `[tag]` and an
+`{edition-X}`, the Jellyfin label combines them as
+`<resolution> <edition>`, e.g. `- 4k Director's Cut`. The resolution
+must come first so that the alphabetic sort (`4k` < `BD` < `DVD`) wins
+across the *whole* label regardless of which editions are present —
+`4k Director's Cut` sorts before `BD Theatrical Cut` because the
+comparison starts at the front.
+
+Putting the resolution last (`Director's Cut 1080p`) would *not* help,
+either: the docs explicitly state the resolution-aware sort only
+triggers when the version name **ends** with `p` or `i`. A label like
+`1080p Director's Cut` ends with `t` and therefore falls back to
+alphabetic sort — the embedded `p` is irrelevant.
+
+Quote from the Jellyfin docs:
+
+> A version name qualifies as a resolution name when ending with
+> either a `p` or an `i`.
+
 ### Why not DVD/SDR/FHD/UHD?
 
 The "modern" set DVD/SDR/FHD/UHD sorts as
