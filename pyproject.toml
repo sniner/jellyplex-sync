@@ -20,7 +20,10 @@ dependencies = []
 jellyplex-sync = "jellyplex_sync.cli.sync:main"
 
 [dependency-groups]
-dev = ["pytest>=8.3.5,<9"]
+dev = [
+    "pytest>=8.3.5,<9",
+    "jellyplex-gen>=0.1.0",
+]
 
 [tool.uv]
 default-groups = "all"
