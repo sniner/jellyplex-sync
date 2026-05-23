@@ -124,13 +124,38 @@ def video_path(
     return movie_path(writer, movie, reporter) / writer.video_name(movie, video, reporter)
 
 
-def scan(reader: LibraryReader) -> Generator[tuple[pathlib.Path, MovieInfo], None, None]:
-    """Walk a library and yield (folder, movie) for every parseable movie folder."""
+@dataclass
+class IgnoredEntry:
+    """A top-level entry in the source library that the scanner skipped.
+
+    Surfaced in the sync summary and the diff output so a user planning a
+    migration can see what would NOT be carried over before deleting the
+    source.
+    """
+
+    path: pathlib.Path
+    reason: str
+
+
+def scan(
+    reader: LibraryReader,
+    ignored: list[IgnoredEntry] | None = None,
+) -> Generator[tuple[pathlib.Path, MovieInfo], None, None]:
+    """Walk a library and yield (folder, movie) for every parseable movie folder.
+
+    If `ignored` is provided, top-level entries the scanner skips (stray
+    files at the library root, folders whose names don't parse) are
+    appended to it.
+    """
     for entry in reader.base_dir.glob("*"):
         if not entry.is_dir():
+            if ignored is not None:
+                ignored.append(IgnoredEntry(entry, "not a directory"))
             continue
         movie = reader.parse_movie(entry)
         if not movie:
             log.warning("Ignoring folder with unparsable name: %s", entry.name)
+            if ignored is not None:
+                ignored.append(IgnoredEntry(entry, "unparseable folder name"))
             continue
         yield entry, movie

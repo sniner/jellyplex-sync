@@ -144,6 +144,26 @@ def test_diff_reports_translation_drops(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
+def test_diff_reports_ignored_root_entries(tmp_path: Path):
+    """Stray files and unparseable folders at the source root must surface
+    in the diff output so a migration user sees what would NOT carry over."""
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    _seed_source(src, ["First (1984) {imdb-tt001}"])
+    _seed_synced_target(src, dst)
+    (src / "[imdb-]").mkdir()  # braces strip → empty title → ignored
+    (src / "library.bif").write_bytes(b"")
+
+    buf = io.StringIO()
+    diff(str(src), str(dst), out=buf)
+    output = buf.getvalue()
+
+    assert "Ignored in source" in output
+    assert "library.bif" in output
+    assert "not a directory" in output
+    assert "[imdb-]" in output
+    assert "unparseable folder name" in output
+
+
 def test_diff_honors_format_override(tmp_path: Path):
     """If the source contains Plex-format movies, asking diff to keep the
     target as Plex (lint/no-op) should detect that the target is also

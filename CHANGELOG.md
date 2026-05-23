@@ -46,6 +46,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **Lint / normalize mode** — setting `--source-format` and `--target-format` to the same value
   rewrites a library in its own format (e.g. to canonicalize Plex labels against the current
   layout rules). Works for both `sync` and `diff`
+- **Ignored-entries reporting** — top-level items the scanner skips (stray files at the library
+  root, folders whose names don't parse) are now listed in both the sync summary and the
+  `diff` output. Before, these were silently warning-logged at most and could vanish unnoticed
+  when a user deleted the source after migration. New `IgnoredEntry` type in the public API,
+  populated on `LibraryStats.ignored` and `DiffResult.ignored`
 
 ## [0.1.6] - 2026-05-21
 

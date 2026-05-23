@@ -4,13 +4,14 @@ import logging
 import pathlib
 import re
 from collections.abc import Generator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import utils
 from .jellyfin import JellyfinLibraryReader, JellyfinLibraryWriter
 from .library import (
     ACCEPTED_VIDEO_SUFFIXES,
     CollectingReporter,
+    IgnoredEntry,
     LibraryReader,
     LibraryWriter,
     LoggingReporter,
@@ -37,6 +38,7 @@ class LibraryStats:
     movies_total: int = 0
     movies_processed: int = 0
     items_removed: int = 0
+    ignored: list[IgnoredEntry] = field(default_factory=list)
 
 
 def scan_media_library(
@@ -60,7 +62,7 @@ def scan_media_library(
     movies_to_sync: dict[str, tuple[pathlib.Path, MovieInfo] | None] = {}
     conflicting_source_dirs: dict[str, list[str]] = {}
 
-    for entry, movie in scan(source):
+    for entry, movie in scan(source, ignored=stats.ignored):
         target_name = target.movie_name(movie, reporter)
         if target_name in movies_to_sync:
             if target_name not in conflicting_source_dirs:
@@ -450,6 +452,14 @@ def sync(
     )
     log.info(summary)
 
+    if lib_stats.ignored:
+        log.info(
+            "Ignored %d root-level item(s) — these are NOT in the target:",
+            len(lib_stats.ignored),
+        )
+        for item in lib_stats.ignored:
+            log.info("  '%s' (%s)", item.path.name, item.reason)
+
     return 0
 
 
@@ -473,6 +483,7 @@ class DiffResult:
     movies_only_in_target: tuple[str, ...] = ()
     differing_movies: tuple[DiffEntry, ...] = ()
     drops: tuple = ()
+    ignored: tuple[IgnoredEntry, ...] = ()
 
     @property
     def has_differences(self) -> bool:
@@ -531,9 +542,10 @@ def diff(
 
 def _compute_diff(source: LibraryReader, target: LibraryWriter) -> DiffResult:
     reporter = CollectingReporter()
+    ignored: list[IgnoredEntry] = []
 
     expected: dict[str, set[str]] = {}
-    for source_movie_path, movie in scan(source):
+    for source_movie_path, movie in scan(source, ignored=ignored):
         target_movie_name = target.movie_name(movie, reporter)
         expected_files: set[str] = set()
         for entry in source_movie_path.glob("*"):
@@ -574,6 +586,7 @@ def _compute_diff(source: LibraryReader, target: LibraryWriter) -> DiffResult:
         movies_only_in_target=tuple(only_target),
         differing_movies=tuple(differing),
         drops=tuple(reporter.drops),
+        ignored=tuple(ignored),
     )
 
 
@@ -619,6 +632,12 @@ def _print_diff(
         for d in result.drops:
             key = f"{d.key}=" if d.key else ""
             print(f"  ! {d.kind} {key}{d.value!r}: {d.reason}", file=out)
+        print(file=out)
+
+    if result.ignored:
+        print(f"Ignored in source ({len(result.ignored)}):", file=out)
+        for i in result.ignored:
+            print(f"  ! '{i.path.name}': {i.reason}", file=out)
         print(file=out)
 
     if not result.has_differences and not result.drops:

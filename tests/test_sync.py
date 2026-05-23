@@ -101,6 +101,32 @@ def test_scan_media_library_dry_run_leaves_stray(tmp_path: Path) -> None:
     assert stray.exists()
 
 
+def test_scan_media_library_collects_ignored_entries(tmp_path: Path) -> None:
+    """Stray files at the library root and unparseable folder names land in
+    LibraryStats.ignored so the sync summary can surface them — important
+    for migration safety (user mustn't delete the source without seeing
+    what was left behind)."""
+    src = tmp_path / "jellyfin"
+    dst = tmp_path / "plex"
+    src.mkdir()
+    dst.mkdir()
+    (src / "First (1984) [imdbid-tt001]").mkdir()
+    (src / "[imdbid-tt002]").mkdir()  # unparseable: no title after id strip
+    (src / "stray.txt").write_bytes(b"")
+
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    stats = LibraryStats()
+
+    list(scan_media_library(source, target, stats=stats))
+
+    ignored_names = {entry.path.name for entry in stats.ignored}
+    assert ignored_names == {"[imdbid-tt002]", "stray.txt"}
+    reasons = {entry.path.name: entry.reason for entry in stats.ignored}
+    assert reasons["stray.txt"] == "not a directory"
+    assert reasons["[imdbid-tt002]"] == "unparseable folder name"
+
+
 def test_scan_media_library_rejects_same_base_dir(tmp_path: Path) -> None:
     src = tmp_path / "lib"
     src.mkdir()
