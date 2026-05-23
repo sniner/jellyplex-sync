@@ -2,9 +2,11 @@
 
 Can't decide between Jellyfin and Plex? This tool might help. It synchronizes your **movie library** between Jellyfin and Plex formats in **both directions** — without duplicating any files. Instead, it uses **hardlinks** to mirror your collection efficiently, saving storage while keeping both libraries in sync.
 
+> ⚠️ **0.2.0 is a major rewrite.** Subcommands, new materializer options, machine-readable `--json` output, default-sync-everything behavior, and a renamed model field (`tags` → `labels` in the Python API). If you depend on the old shape, **try the new version with `--dry-run` first**, and pin to a `0.1.x` release if anything looks off. See the [CHANGELOG](./CHANGELOG.md) for the full migration notes.
+
 ## Overview
 
-The script scans the source library, parses each movie folder for metadata (title, year, optional provider ID), and reproduces the same directory structure in the target location. Rather than copying video files, it creates hard links to avoid extra storage usage. Asset folders (e.g., `extras`, `subtitles`) are also mirrored. With `--delete`, any files or folders in the target that are no longer present in the source will be removed.
+The script scans the source library, parses each movie folder for metadata (title, year, optional provider ID), and reproduces the same directory structure in the target location. Rather than copying video files, it creates hard links to avoid extra storage usage. Asset folders (e.g., `extras`, `subtitles`) are also mirrored. Loose top-level files (posters, NFOs, subtitles) are synced 1:1 by default since 0.2.0. With `--delete`, any files or folders in the target that are no longer present in the source will be removed.
 
 > **Warning:** This script will **overwrite the entire target directory**. Do not store or edit anything manually in the target library path. The source library is treated as the **only source of truth**, and any unmatched content in the target folder may be deleted without warning.
 
@@ -12,7 +14,7 @@ The script scans the source library, parses each movie folder for metadata (titl
 
 > ⚠️ **Movies only:** This script is designed exclusively for **movie libraries**. It does **not** support TV shows or miniseries. However, this is usually not a limitation in practice: for shows, Jellyfin and Plex use very similar directory structures, so you can typically point both apps to the same library without issues.
 
-> ⚠️ **Hardlinks require a shared filesystem:** Source and target paths must live on the **same filesystem**. Hardlinks cannot span filesystems or physical disks. On Unraid's classic array this is a real concern — see the [Unraid section](#unraid-user-scripts) for details before running this tool there.
+> ⚠️ **Hardlinks require a shared filesystem:** Source and target paths must live on the **same filesystem**. Hardlinks cannot span filesystems or physical disks. If they don't, switch to `--copy`. On Unraid's classic array this is a real concern — see the [Unraid section](#unraid-user-scripts) for details before running this tool there.
 
 ## Installation
 
@@ -42,48 +44,146 @@ docker build -t jellyplex-sync .
 
 ## Usage
 
-### CLI
+The CLI is split into two subcommands:
+
+- **`sync`** — mirror a source library into the target layout (the historical operation; this is also the default if you omit the subcommand).
+- **`diff`** — read-only comparison of source and target. No filesystem changes. Useful before deleting your source after a migration.
+
+### `sync`
 
 ```bash
-jellyplex-sync [OPTIONS] /path/to/source/library /path/to/target/library
+jellyplex-sync sync [OPTIONS] /path/to/source/library /path/to/target/library
 ```
 
-The first positional argument is the source library, the second is the target. By default the tool auto-detects whether the source is a Jellyfin or Plex layout and converts it to the other format.
+The first positional is the source library, the second is the target. By default the tool auto-detects whether the source is a Jellyfin or Plex layout and converts to the other format.
 
 #### Options
 
 - `--create` — create the target directory if it doesn't exist.
-- `--delete` — remove movie folders and stray files in the target that are not present in the source.
+- `--delete` — remove stray folders/files in the target that have no counterpart in the source. Without this, strays are reported in the summary but kept on disk.
 - `--dry-run` — show what would happen without touching the filesystem.
-- `--verbose` — log every processed movie.
+- `-v`, `--verbose` — log every processed movie.
 - `--debug` — enable debug-level logging.
+- `--json` — emit a machine-readable JSON document on stdout (see [JSON output](#json-output) below). Stderr is automatically quieted to WARNING unless `--verbose`/`--debug` is set, so the document pipes cleanly into `jq`.
 - `--source-format {jellyfin,plex,auto}` — declare the source library format. `auto` (default) inspects the source layout.
-- `--target-format {jellyfin,plex,auto}` — declare the target library format. `auto` (default) picks the opposite of the source. Setting both flags to the same value puts the tool into lint/normalize mode (rewrite a library in its own format, e.g. to canonicalize labels).
+- `--target-format {jellyfin,plex,auto}` — declare the target library format. `auto` (default) picks the opposite of the source. Setting both flags to the same value puts the tool into lint/normalize mode (rewrite a library in its own format, e.g. to canonicalize Plex labels).
+
+**Materializer flags** (mutually exclusive — pick at most one):
+
+- `--hardlink` (default) — create a hardlink at the target pointing to the source inode. Requires source and target on the same filesystem.
+- `--copy` — copy bytes. On re-runs, skips files whose target already has the same size **and** mtime as the source.
+- `--force-copy` — always copy, no skip heuristic.
+
+Use `--copy` when source and target are on different filesystems (NAS to local disk, cross-pool moves, etc.). The size+mtime check makes re-runs cheap.
 
 #### Examples
 
 Mirror a Jellyfin library into a new Plex structure:
 
 ```bash
-jellyplex-sync --create ~/Media/Jellyfin ~/Media/Plex
+jellyplex-sync sync --create ~/Media/Jellyfin ~/Media/Plex
 ```
 
-Mirror and prune anything in the Plex folder that no longer exists in Jellyfin:
+Migration with cleanup (target becomes a clean mirror):
 
 ```bash
-jellyplex-sync --delete ~/Media/Jellyfin ~/Media/Plex
+jellyplex-sync sync --delete --create ~/Media/Jellyfin ~/Media/Plex
+```
+
+Cross-filesystem copy with safe re-runs:
+
+```bash
+jellyplex-sync sync --copy --create /mnt/nas/Movies /mnt/local/Plex
 ```
 
 Dry-run a verbose, full sync with deletion:
 
 ```bash
-jellyplex-sync --dry-run --verbose --delete --create ~/Media/Jellyfin ~/Media/Plex
+jellyplex-sync sync --dry-run --verbose --delete --create ~/Media/Jellyfin ~/Media/Plex
 ```
+
+### `diff`
+
+```bash
+jellyplex-sync diff [OPTIONS] /path/to/source/library /path/to/target/library
+```
+
+Compares the two libraries without touching anything. Reports movies that exist only on one side, file-level differences inside shared movies, translation losses (Plex labels with no Jellyfin equivalent, for example), and entries the scanner ignored.
+
+Exit codes follow the Unix `diff` convention:
+
+- `0` — in sync.
+- `1` — differences found.
+- `2` — setup error (missing directories, indecipherable format).
+
+#### Example
+
+Verify a target is a complete mirror before deleting the source:
+
+```bash
+jellyplex-sync diff ~/Media/Jellyfin ~/Media/Plex
+```
+
+### JSON output
+
+Both subcommands accept `--json` for machine-readable output. The document goes to **stdout**; logs continue to go to stderr. Under `--json`, INFO logs are suppressed unless you pass `--verbose` or `--debug`, so the output pipes cleanly into tools like `jq` without filtering.
+
+The schema (still evolving — pin a version when consuming):
+
+- `operation`: `"sync"` or `"diff"`.
+- `exit_code`: the process exit code, mirrored in the document for convenience.
+- `source` / `target`: `{path, format}` for each endpoint.
+- `dry_run` (sync only): whether the run was a preview.
+- `summary` (sync only): counters for `movies_total`, `movies_processed`, `files_updated`, `files_removed`, `items_ignored`, `strays_in_target`.
+- `ignored`: list of source-side entries the scanner skipped, each `{path, name, reason}`.
+- `strays_in_target` (sync only): list of names found in target that aren't in source.
+- `translation_losses`: distinct `{kind, key, value, reason}` tuples for labels/attributes the target format can't express. Deduplicated — one entry per distinct loss, not per affected file.
+- `events` (sync only): flat array of per-file actions, each `{action, target, source?, context?}`. Actions are `link`, `replace`, `skip`, `remove`. For `remove`, `context` is `library_stray` / `movie_stray` / `asset_stray`. Action names are the same in `--dry-run` and real runs; the top-level `dry_run` flag tells you which mode you were in.
+- `diff`-specific fields: `movies_only_in_source`, `movies_only_in_target`, `differing_movies`, `in_sync`.
+
+#### `jq` examples
+
+Show every file that would be replaced (with full paths):
+
+```bash
+jellyplex-sync sync --json --dry-run /src /dst \
+    | jq '.events[] | select(.action == "replace") | {source, target}'
+```
+
+Verify nothing important gets deleted before running a migration with `--delete`:
+
+```bash
+jellyplex-sync sync --json --dry-run --delete /src /dst \
+    | jq '.events[] | select(.action == "remove")'
+```
+
+Action distribution:
+
+```bash
+jellyplex-sync sync --json --dry-run /src /dst \
+    | jq '[.events[].action] | group_by(.) | map({action: .[0], count: length})'
+```
+
+### Default subcommand
+
+For backward compatibility, omitting the subcommand is treated as an implicit `sync` (as long as the first argument is a positional, not a flag):
+
+```bash
+jellyplex-sync ~/Media/Jellyfin ~/Media/Plex
+```
+
+is equivalent to
+
+```bash
+jellyplex-sync sync ~/Media/Jellyfin ~/Media/Plex
+```
+
+If you start with a flag, you must spell out `sync` explicitly.
 
 ### Docker
 
 ```bash
-docker run --rm -v /your/media:/mnt ghcr.io/sniner/jellyplex-sync:latest /mnt/source /mnt/target
+docker run --rm -v /your/media:/mnt ghcr.io/sniner/jellyplex-sync:latest sync /mnt/source /mnt/target
 ```
 
 To try the tool, generate a small Plex-format library with
@@ -94,10 +194,10 @@ sync at it:
 uvx jellyplex-gen plex --seed=demo --movies=20 --out=./demo-plex
 mkdir ./demo-jellyfin
 docker run --rm -v .:/mnt ghcr.io/sniner/jellyplex-sync:latest \
-    /mnt/demo-plex /mnt/demo-jellyfin
+    sync /mnt/demo-plex /mnt/demo-jellyfin
 ```
 
-> **Bind-mount note:** Both source and target paths must be reachable inside the container **through the same bind mount**, otherwise hardlinks between them cannot be created.
+> **Bind-mount note:** With `--hardlink` (default), both source and target paths must be reachable inside the container **through the same bind mount**, otherwise hardlinks between them cannot be created. With `--copy`, this constraint goes away.
 
 ### Unraid (User Scripts)
 
@@ -110,6 +210,7 @@ The repository includes a `jellyplex-sync.sh` helper you can add to the Unraid U
 > - **Same disk:** Put both source and target under the same `/mnt/diskX/...` path so the kernel sees one filesystem.
 > - **Cache pool:** Keep both libraries on a single cache pool with no mover involvement.
 > - **ZFS pool (recommended):** ZFS-backed pools present a single filesystem and handle hardlinks cleanly.
+> - **Different filesystems:** Switch to `--copy` instead of the default `--hardlink`. Bytes get duplicated, but the layout works.
 >
 > If you used the legacy single-file script from the `unraid_user_scripts` branch in the past, the same constraint applied there.
 
@@ -117,9 +218,11 @@ This helper can also be used on other NAS systems or Linux servers — schedule 
 
 ## Behavior
 
-- **Hardlinks** — Video files are linked, not copied. Both libraries reference the same physical files on disk.
-- **Asset folders** — Subdirectories (e.g., `other`, `interviews`) are processed recursively with the same hardlink logic. Note: rename your Jellyfin `extras` folder to `other`, since Plex does not recognize `extras`.
-- **Stray items** — With `--delete`, any file or folder in the target that has no counterpart in the source is removed.
+- **Hardlinks (default)** — Video files are linked, not copied. Both libraries reference the same physical files on disk. Switch to `--copy` for cross-filesystem setups.
+- **Asset folders** — Subdirectories (e.g., `other`, `interviews`) are processed recursively with the same materialization strategy. Note: rename your Jellyfin `extras` folder to `other`, since Plex does not recognize `extras`.
+- **Loose top-level files** — Sidecar files (`.nfo`, posters, external subtitles, plain notes) at the top of a movie folder are synced 1:1 by default since 0.2.0. Pre-0.2.0 they were silently dropped — which made the tool unsafe for migrations. Dot-files (`.DS_Store`, `.stversions`, …) stay excluded.
+- **Stray items** — With `--delete`, any file or folder in the target that has no counterpart in the source is removed. Without `--delete`, strays are still reported in the summary and the `--json` output, plus a warning at the end of the run points at `--delete`.
+- **Ignored items** — Entries the scanner couldn't classify (stray files at the library root, folders whose names don't parse) are reported in the summary and the `--json` `ignored` array. They are *not* carried over to the target — useful to verify before deleting the source.
 
 ## Library layouts
 
@@ -145,9 +248,7 @@ Each movie must reside in its own folder, with optional subfolders for extras. D
 
 #### Special filename handling
 
-Jellyfin doesn't distinguish between editions (e.g., Director's Cut) and versions (e.g., 1080p vs. 4K). To work around this, I appended labels like "DVD", "BD", or "4K" to filenames in my personal library, ensuring the highest quality appears first and is selected by default in Jellyfin. Plex, on the other hand, supports editions natively and handles different versions via naming patterns and its internal version management. These specific labels are converted into Plex versions, while all other suffixes are treated as editions.
-
-This naming convention is something I came up with for my personal library — it's not part of any official Jellyfin standard. If your setup uses a different scheme, you may want to adjust the parsing behavior by switching to a different `VariantParser`, such as the simpler `SimpleVariantParser`.
+Jellyfin doesn't distinguish between editions (e.g., Director's Cut) and versions (e.g., 1080p vs. 4K). To work around this, I appended labels like "DVD", "BD", or "4K" to filenames in my personal library, ensuring the highest quality appears first and is selected by default in Jellyfin. Plex, on the other hand, supports editions natively and handles different versions via naming patterns and its internal version management. These specific labels are converted into Plex versions on the way over; other suffixes are treated as editions. The detailed mapping rules (and why DVD/BD/4k beats DVD/SDR/FHD/UHD despite the naming inconsistency) live in [DEV.md](./DEV.md).
 
 ### Plex
 
