@@ -1,9 +1,11 @@
+import logging
 import os
 from pathlib import Path
 
 import pytest
 
 import jellyplex_sync as jp
+from jellyplex_sync.library import LoggingReporter
 
 
 def _touch(path: Path, content: bytes = b"x") -> Path:
@@ -199,6 +201,28 @@ def test_copy_records_skip_event_on_match(tmp_path: Path):
     mat.materialize(src, dst, events=events)
 
     assert events[0].action == "skip"
+
+
+def test_logging_reporter_drops_at_debug_by_default(caplog):
+    """The reporter is noisy on real libraries — every dropped label
+    per file. Default is DEBUG so it's invisible at INFO level (the
+    sync default)."""
+    reporter = LoggingReporter()
+    with caplog.at_level(logging.DEBUG, logger="jellyplex_sync.library"):
+        reporter.drop(jp.Drop(kind="label", key=None, value="remux", reason="x"))
+    # Recorded at DEBUG, not WARNING / INFO
+    levels = {r.levelname for r in caplog.records}
+    assert levels == {"DEBUG"}
+
+
+def test_logging_reporter_drops_at_info_when_verbose(caplog):
+    """`verbose=True` bumps drops to INFO so they show up alongside
+    the regular sync log."""
+    reporter = LoggingReporter(verbose=True)
+    with caplog.at_level(logging.INFO, logger="jellyplex_sync.library"):
+        reporter.drop(jp.Drop(kind="label", key=None, value="remux", reason="x"))
+    levels = {r.levelname for r in caplog.records}
+    assert levels == {"INFO"}
 
 
 def test_events_recorded_in_dry_run_too(tmp_path: Path):

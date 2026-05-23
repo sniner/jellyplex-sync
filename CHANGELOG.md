@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+- **Drop warnings are quiet by default** — `LoggingReporter` used to log every dropped
+  label at WARNING, which produced one warning per affected file on real libraries
+  (hundreds of `[remux]`, `[amazon]`, `[BluRay]` etc. each scrolling past). Drops now go to
+  DEBUG by default and to INFO with `--verbose`. The text summary still shows aggregate
+  counts; the JSON output still carries the deduplicated `translation_losses` list and the
+  full per-file events
+
 ## [0.2.0] - 2026-05-23
 
 ### Breaking changes

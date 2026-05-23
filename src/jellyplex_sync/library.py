@@ -56,10 +56,22 @@ class Reporter(Protocol):
 
 
 class LoggingReporter:
-    """Logs drops at warning level and keeps going. The default mode."""
+    """Logs drops and keeps going. The default mode.
+
+    Drops go to DEBUG by default — on a real library, every
+    `[remux]`, `[amazon]`, `[BluRay]` etc. label that can't translate
+    to a Jellyfin version label produces one drop per affected file,
+    which drowns the log under normal use. Set `verbose=True` to bump
+    drops to INFO so they appear alongside the regular sync output
+    (this is what `--verbose` on the CLI does).
+    """
+
+    def __init__(self, *, verbose: bool = False) -> None:
+        self._drop_level = logging.INFO if verbose else logging.DEBUG
 
     def drop(self, drop: Drop) -> None:
-        log.warning(
+        log.log(
+            self._drop_level,
             "dropped %s %s=%r: %s",
             drop.kind,
             drop.key or "",
