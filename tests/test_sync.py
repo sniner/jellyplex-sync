@@ -31,8 +31,8 @@ def test_scan_media_library_yields_each_movie(tmp_path: Path) -> None:
     (src / "First (1984) [imdbid-tt001]").mkdir()
     (src / "Second (1990) [imdbid-tt002]").mkdir()
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
 
     results = list(scan_media_library(source, target))
 
@@ -55,8 +55,8 @@ def test_scan_media_library_skips_conflicting_sources(tmp_path: Path) -> None:
     (src / "Movie (2000) [imdbid-tt001]").mkdir()
     (src / "Movie (2000) - [imdbid-tt001]").mkdir()
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
     stats = LibraryStats()
 
     results = list(scan_media_library(source, target, stats=stats))
@@ -74,8 +74,8 @@ def test_scan_media_library_removes_stray_with_delete(tmp_path: Path) -> None:
     stray = dst / "Stray (1999) {imdb-tt999}"
     stray.mkdir()
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
     stats = LibraryStats()
 
     list(scan_media_library(source, target, delete=True, stats=stats))
@@ -93,19 +93,118 @@ def test_scan_media_library_dry_run_leaves_stray(tmp_path: Path) -> None:
     stray = dst / "Stray"
     stray.mkdir()
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
 
     list(scan_media_library(source, target, delete=True, dry_run=True))
 
     assert stray.exists()
 
 
+def test_scan_media_library_records_strays_without_delete(tmp_path: Path) -> None:
+    """Strays in target are recorded in LibraryStats regardless of --delete,
+    so the summary can warn about them. The migration scenario: user syncs
+    from Plex layout into a directory that still holds old Jellyfin-format
+    folders. Without this, the summary would falsely report "all in sync"
+    while 55 zombie folders sit in target."""
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    (src / "First (1984) [imdbid-tt001]").mkdir()
+    # Two strays in target — both must show up regardless of delete flag.
+    (dst / "Old (1990) {imdb-tt999}").mkdir()
+    (dst / "Other (1991) {imdb-tt998}").mkdir()
+
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    stats = LibraryStats()
+
+    list(scan_media_library(source, target, stats=stats, delete=False))
+
+    assert set(stats.strays_in_target) == {
+        "Old (1990) {imdb-tt999}",
+        "Other (1991) {imdb-tt998}",
+    }
+    assert stats.items_removed == 0  # nothing removed without --delete
+    # Strays still on disk
+    assert (dst / "Old (1990) {imdb-tt999}").exists()
+
+
+def test_scan_media_library_records_strays_with_delete(tmp_path: Path) -> None:
+    """With --delete the same items appear in strays_in_target AND get
+    counted in items_removed and removed from disk."""
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    (src / "First (1984) [imdbid-tt001]").mkdir()
+    stray = dst / "Old (1990) {imdb-tt999}"
+    stray.mkdir()
+
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    stats = LibraryStats()
+
+    list(scan_media_library(source, target, stats=stats, delete=True))
+
+    assert stats.strays_in_target == ["Old (1990) {imdb-tt999}"]
+    assert stats.items_removed == 1
+    assert not stray.exists()
+
+
+def test_scan_media_library_records_library_stray_remove_events(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    (src / "First (1984) [imdbid-tt001]").mkdir()
+    (dst / "Stray (1990) {imdb-tt999}").mkdir()
+
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    stats = LibraryStats()
+
+    list(scan_media_library(source, target, delete=True, stats=stats))
+
+    remove_events = [e for e in stats.events if e.action == "remove"]
+    assert len(remove_events) == 1
+    assert remove_events[0].context == "library_stray"
+    assert remove_events[0].target.name == "Stray (1990) {imdb-tt999}"
+    assert remove_events[0].source is None
+
+
+def test_scan_media_library_collects_ignored_entries(tmp_path: Path) -> None:
+    """Stray files at the library root and unparseable folder names land in
+    LibraryStats.ignored so the sync summary can surface them — important
+    for migration safety (user mustn't delete the source without seeing
+    what was left behind)."""
+    src = tmp_path / "jellyfin"
+    dst = tmp_path / "plex"
+    src.mkdir()
+    dst.mkdir()
+    (src / "First (1984) [imdbid-tt001]").mkdir()
+    (src / "[imdbid-tt002]").mkdir()  # unparseable: no title after id strip
+    (src / "stray.txt").write_bytes(b"")
+
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    stats = LibraryStats()
+
+    list(scan_media_library(source, target, stats=stats))
+
+    ignored_names = {entry.path.name for entry in stats.ignored}
+    assert ignored_names == {"[imdbid-tt002]", "stray.txt"}
+    reasons = {entry.path.name: entry.reason for entry in stats.ignored}
+    assert reasons["stray.txt"] == "not a directory"
+    assert reasons["[imdbid-tt002]"] == "unparseable folder name"
+
+
 def test_scan_media_library_rejects_same_base_dir(tmp_path: Path) -> None:
     src = tmp_path / "lib"
     src.mkdir()
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(src)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(src)
 
     with pytest.raises(ValueError):
         list(scan_media_library(source, target))
@@ -125,9 +224,9 @@ def test_process_movie_hardlinks_video(tmp_path: Path) -> None:
     movie_dir.mkdir()
     src_video = _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"video-bytes")
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
-    movie = source.parse_movie_path(movie_dir)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
     assert movie is not None
 
     stats = process_movie(source, target, movie_dir, movie)
@@ -148,9 +247,9 @@ def test_process_movie_is_idempotent(tmp_path: Path) -> None:
     movie_dir.mkdir()
     _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"v")
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
-    movie = source.parse_movie_path(movie_dir)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
     assert movie is not None
 
     process_movie(source, target, movie_dir, movie)
@@ -169,9 +268,9 @@ def test_process_movie_dry_run_creates_nothing(tmp_path: Path) -> None:
     movie_dir.mkdir()
     _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"v")
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
-    movie = source.parse_movie_path(movie_dir)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
     assert movie is not None
 
     process_movie(source, target, movie_dir, movie, dry_run=True)
@@ -189,9 +288,9 @@ def test_process_movie_syncs_asset_folder(tmp_path: Path) -> None:
     _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"v")
     _touch(movie_dir / "extras" / "trailer.mp4", b"t")
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
-    movie = source.parse_movie_path(movie_dir)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
     assert movie is not None
 
     stats = process_movie(source, target, movie_dir, movie)
@@ -211,14 +310,109 @@ def test_process_movie_ignores_dotfolders(tmp_path: Path) -> None:
     _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"v")
     _touch(movie_dir / ".hidden" / "secret.txt", b"x")
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
-    movie = source.parse_movie_path(movie_dir)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
     assert movie is not None
 
     process_movie(source, target, movie_dir, movie)
 
     assert not (dst / "First (1984) {imdb-tt001}" / ".hidden").exists()
+
+
+def test_process_movie_syncs_loose_top_level_files(tmp_path: Path) -> None:
+    """Loose non-video files in the movie directory (subtitles, nfo, poster,
+    notes) are synced 1:1 to the target — they keep their original name and
+    land in the target movie folder.
+
+    This was the behavior change in Paket 4 (0.2.0): pre-0.2.0 these files
+    were silently dropped, which made jellyplex-sync unsafe for migrations.
+    Dotfiles like .DS_Store stay excluded, matching the dotfolder skip.
+    """
+    src = tmp_path / "jellyfin"
+    dst = tmp_path / "plex"
+    src.mkdir()
+    dst.mkdir()
+    movie_dir = src / "First (1984) [imdbid-tt001]"
+    movie_dir.mkdir()
+    _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"v")
+    _touch(movie_dir / "First (1984) [imdbid-tt001].nfo", b"n")
+    _touch(movie_dir / "First (1984) [imdbid-tt001].en.srt", b"s")
+    _touch(movie_dir / "poster.jpg", b"p")
+    _touch(movie_dir / "random_note.txt", b"r")
+    _touch(movie_dir / ".DS_Store", b"junk")
+    _touch(movie_dir / "extras" / "trailer.mp4", b"t")
+
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
+    assert movie is not None
+
+    stats = process_movie(source, target, movie_dir, movie)
+
+    target_movie = dst / "First (1984) {imdb-tt001}"
+    # Video and asset folder still work as before
+    assert (target_movie / "First (1984) {imdb-tt001}.mkv").exists()
+    assert (target_movie / "extras" / "trailer.mp4").exists()
+    # Loose files are now synced with their original filename
+    assert (target_movie / "First (1984) [imdbid-tt001].nfo").exists()
+    assert (target_movie / "First (1984) [imdbid-tt001].en.srt").exists()
+    assert (target_movie / "poster.jpg").exists()
+    assert (target_movie / "random_note.txt").exists()
+    # Dotfiles still excluded
+    assert not (target_movie / ".DS_Store").exists()
+
+    assert stats.loose_files_total == 4
+    assert stats.loose_files_linked == 4
+
+
+def test_process_movie_records_movie_stray_remove_events(tmp_path: Path) -> None:
+    """Strays inside a movie folder produce remove events with
+    context='movie_stray' — distinct from library-level strays."""
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    movie_dir = src / "First (1984) [imdbid-tt001]"
+    movie_dir.mkdir()
+    _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"v")
+    target_movie = dst / "First (1984) {imdb-tt001}"
+    target_movie.mkdir()
+    _touch(target_movie / "stale-inside-movie.txt", b"old")
+
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
+    assert movie is not None
+
+    stats = process_movie(source, target, movie_dir, movie, delete=True)
+
+    remove_events = [e for e in stats.events if e.action == "remove"]
+    assert len(remove_events) == 1
+    assert remove_events[0].context == "movie_stray"
+    assert remove_events[0].target.name == "stale-inside-movie.txt"
+
+
+def test_process_movie_records_link_events_for_videos(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    movie_dir = src / "First (1984) [imdbid-tt001]"
+    movie_dir.mkdir()
+    _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"v")
+
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
+    assert movie is not None
+
+    stats = process_movie(source, target, movie_dir, movie)
+
+    link_events = [e for e in stats.events if e.action == "link"]
+    assert len(link_events) == 1
+    assert link_events[0].source is not None
+    assert link_events[0].source.name == "First (1984) [imdbid-tt001].mkv"
 
 
 def test_process_movie_removes_stray_with_delete(tmp_path: Path) -> None:
@@ -234,9 +428,9 @@ def test_process_movie_removes_stray_with_delete(tmp_path: Path) -> None:
     target_movie_dir.mkdir()
     stray_file = _touch(target_movie_dir / "leftover.txt", b"old")
 
-    source = jp.JellyfinLibrary(src)
-    target = jp.PlexLibrary(dst)
-    movie = source.parse_movie_path(movie_dir)
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
     assert movie is not None
 
     stats = process_movie(source, target, movie_dir, movie, delete=True)
@@ -309,7 +503,7 @@ def test_guess_library_type_detects_plex(tmp_path: Path) -> None:
     movie_dir.mkdir()
     _touch(movie_dir / "First (1984) {imdb-tt001}.mkv", b"v")
 
-    assert guess_library_type(tmp_path) is jp.PlexLibrary
+    assert guess_library_type(tmp_path) is jp.PlexLibraryReader
 
 
 def test_guess_library_type_detects_jellyfin(tmp_path: Path) -> None:
@@ -317,7 +511,7 @@ def test_guess_library_type_detects_jellyfin(tmp_path: Path) -> None:
     movie_dir.mkdir()
     _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"v")
 
-    assert guess_library_type(tmp_path) is jp.JellyfinLibrary
+    assert guess_library_type(tmp_path) is jp.JellyfinLibraryReader
 
 
 def test_guess_library_type_detects_plex_edition(tmp_path: Path) -> None:
@@ -325,7 +519,7 @@ def test_guess_library_type_detects_plex_edition(tmp_path: Path) -> None:
     movie_dir.mkdir()
     _touch(movie_dir / "Das Boot (1981) {edition-Director's Cut}.mkv", b"v")
 
-    assert guess_library_type(tmp_path) is jp.PlexLibrary
+    assert guess_library_type(tmp_path) is jp.PlexLibraryReader
 
 
 def test_guess_library_type_returns_none_when_unclear(tmp_path: Path) -> None:

@@ -21,19 +21,32 @@ wheels = [
 ]
 
 [[package]]
+name = "jellyplex-gen"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c4/6b/e0b2bfebd45ae6624ff8b76305197be084b15fe19eafc7359c4868db62e1/jellyplex_gen-0.1.0.tar.gz", hash = "sha256:1ec7b6d38bf44a594f96b772543b252cadc5ef60b552719964e5b9527ee1129a", size = 7641, upload-time = "2026-05-22T19:57:09.87Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/fa/58cae5ddc2bd57753af50fa47997d6834024e15b668dc9eab6880f0f4bd0/jellyplex_gen-0.1.0-py3-none-any.whl", hash = "sha256:dd3b47761a3b898bd47aa2b53407d2cc99211073ae76b0ccb03315447c978391", size = 11006, upload-time = "2026-05-22T19:57:11.352Z" },
+]
+
+[[package]]
 name = "jellyplex-sync"
-version = "0.1.6"
+version = "0.2.0"
 source = { editable = "." }
 
 [package.dev-dependencies]
 dev = [
+    { name = "jellyplex-gen" },
     { name = "pytest" },
 ]
 
 [package.metadata]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.3.5,<9" }]
+dev = [
+    { name = "jellyplex-gen", specifier = ">=0.1.0" },
+    { name = "pytest", specifier = ">=8.3.5,<9" },
+]
 
 [[package]]
 name = "packaging"

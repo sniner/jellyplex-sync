@@ -3,23 +3,44 @@ from __future__ import annotations
 import logging
 import pathlib
 import re
-from collections.abc import Generator
-from dataclasses import dataclass
+from collections.abc import Callable, Generator
+from dataclasses import dataclass, field
 
 from . import utils
-from .jellyfin import (
-    JellyfinLibrary,
-)
+from .jellyfin import JellyfinLibraryReader, JellyfinLibraryWriter
 from .library import (
     ACCEPTED_VIDEO_SUFFIXES,
-    MediaLibrary,
-    MovieInfo,
+    CollectingReporter,
+    FileEvent,
+    IgnoredEntry,
+    LibraryReader,
+    LibraryWriter,
+    LoggingReporter,
+    Reporter,
+    dedupe_drops,
+    movie_path,
+    scan,
+    video_path,
 )
-from .plex import (
-    PlexLibrary,
-)
+from .materializer import FileMaterializer, HardlinkMaterializer
+from .model import MovieInfo
+from .plex import PlexLibraryReader, PlexLibraryWriter
 
 log = logging.getLogger(__name__)
+
+
+# Factory pair per shortname. Typed as Callable rather than `type[Protocol]`
+# because Protocol classes don't declare __init__, and pyright treats
+# `type[LibraryReader](path)` as a zero-arg call. The factory shape is
+# what we actually need at the call site: hand it a base_dir, get a
+# Reader / Writer back.
+_ReaderFactory = Callable[[pathlib.Path], LibraryReader]
+_WriterFactory = Callable[[pathlib.Path], LibraryWriter]
+
+_LIBRARY_TYPES: dict[str, tuple[_ReaderFactory, _WriterFactory]] = {
+    PlexLibraryReader.shortname(): (PlexLibraryReader, PlexLibraryWriter),
+    JellyfinLibraryReader.shortname(): (JellyfinLibraryReader, JellyfinLibraryWriter),
+}
 
 
 @dataclass
@@ -27,12 +48,18 @@ class LibraryStats:
     movies_total: int = 0
     movies_processed: int = 0
     items_removed: int = 0
+    items_linked: int = 0
+    movie_items_removed: int = 0
+    ignored: list[IgnoredEntry] = field(default_factory=list)
+    strays_in_target: list[str] = field(default_factory=list)
+    events: list[FileEvent] = field(default_factory=list)
 
 
 def scan_media_library(
-    source: MediaLibrary,
-    target: MediaLibrary,
+    source: LibraryReader,
+    target: LibraryWriter,
     *,
+    reporter: Reporter | None = None,
     dry_run: bool = False,
     delete: bool = False,
     stats: LibraryStats | None = None,
@@ -41,16 +68,16 @@ def scan_media_library(
     Yields a tuple for each movie folder:
         (source: pathlib.Path, destination: pathlib.Path, movie: MovieInfo)
     """
-    if source is target or source.base_dir == target.base_dir:
+    if source.base_dir == target.base_dir:
         raise ValueError("Can not transfer library into itself")
 
+    reporter = reporter or LoggingReporter()
     stats = stats or LibraryStats()
     movies_to_sync: dict[str, tuple[pathlib.Path, MovieInfo] | None] = {}
     conflicting_source_dirs: dict[str, list[str]] = {}
 
-    # Inspect source libary for movie folders to sync
-    for entry, movie in source.scan():
-        target_name = target.movie_name(movie)
+    for entry, movie in scan(source, ignored=stats.ignored):
+        target_name = target.movie_name(movie, reporter)
         if target_name in movies_to_sync:
             if target_name not in conflicting_source_dirs:
                 item = movies_to_sync[target_name]
@@ -61,7 +88,6 @@ def scan_media_library(
             movies_to_sync[target_name] = (entry, movie)
         stats.movies_total += 1
 
-    # If there are any conflicts we bail out now
     if conflicting_source_dirs:
         for dst, src in conflicting_source_dirs.items():
             quoted = [f"'{s}'" for s in src]
@@ -69,16 +95,15 @@ def scan_media_library(
         log.info("You have to solve the conflicts first to proceed")
         return
 
-    # Yield items for sync
     for target_name, item in movies_to_sync.items():
         if not item:
             continue
         stats.movies_processed += 1
         yield item[0], target.base_dir / target_name, item[1]
 
-    # Remove stray items in target library
     for entry in target.base_dir.iterdir():
         if entry.name not in movies_to_sync:
+            stats.strays_in_target.append(entry.name)
             if delete:
                 if dry_run:
                     log.info("DELETE %s", entry)
@@ -86,6 +111,9 @@ def scan_media_library(
                     log.info("Removing stray item '%s' in target library", entry.name)
                     utils.remove(entry)
                 stats.items_removed += 1
+                stats.events.append(
+                    FileEvent(action="remove", target=entry, context="library_stray")
+                )
             else:
                 if not dry_run:
                     log.info("Stray item '%s' found", entry.name)
@@ -96,12 +124,14 @@ class AssetStats:
     files_total: int = 0
     files_linked: int = 0
     items_removed: int = 0
+    events: list[FileEvent] = field(default_factory=list)
 
 
 def process_assets_folder(
     source_path: pathlib.Path,
     target_path: pathlib.Path,
     *,
+    materializer: FileMaterializer | None = None,
     dry_run: bool = False,
     delete: bool = False,
     verbose: bool = False,
@@ -109,6 +139,8 @@ def process_assets_folder(
 ) -> AssetStats:
     if not source_path.is_dir():
         raise ValueError(f"{source_path!s} is not a folder")
+
+    materializer = materializer or HardlinkMaterializer()
 
     if not target_path.exists():
         if dry_run:
@@ -119,34 +151,27 @@ def process_assets_folder(
     stats = stats or AssetStats()
     synced_items = {}
 
-    # Hardlink missing files and dive into subfolders
     for entry in source_path.iterdir():
         dest = target_path / entry.name
         if entry.is_dir():
-            process_assets_folder(entry, dest, verbose=verbose, stats=stats, dry_run=dry_run)
+            process_assets_folder(
+                entry,
+                dest,
+                materializer=materializer,
+                delete=delete,
+                verbose=verbose,
+                stats=stats,
+                dry_run=dry_run,
+            )
         elif entry.is_file():
-            if dest.exists():
-                if dest.samefile(entry):
-                    if verbose:
-                        log.debug("Target file '%s' already exists, skipping", entry.name)
-                else:
-                    if dry_run:
-                        log.info("RELINK %s", entry)
-                    else:
-                        dest.unlink()
-                        dest.hardlink_to(entry)
-                    stats.files_linked += 1
-            else:
-                if dry_run:
-                    log.info("LINK   %s", dest)
-                else:
-                    dest.hardlink_to(entry)
+            if materializer.materialize(
+                entry, dest, dry_run=dry_run, verbose=verbose, events=stats.events,
+            ):
                 stats.files_linked += 1
             stats.files_total += 1
         synced_items[entry.name] = dest
 
     if delete and target_path.is_dir():
-        # Remove stray items
         for entry in target_path.iterdir():
             if entry.name in synced_items:
                 continue
@@ -156,6 +181,9 @@ def process_assets_folder(
             else:
                 utils.remove(entry)
             stats.items_removed += 1
+            stats.events.append(
+                FileEvent(action="remove", target=entry, context="asset_stray")
+            )
 
     return stats
 
@@ -168,6 +196,9 @@ class MovieStats:
     asset_items_total: int = 0
     asset_items_linked: int = 0
     asset_items_removed: int = 0
+    loose_files_total: int = 0
+    loose_files_linked: int = 0
+    events: list[FileEvent] = field(default_factory=list)
 
 
 def _ensure_dir(path: pathlib.Path, *, dry_run: bool) -> None:
@@ -179,41 +210,13 @@ def _ensure_dir(path: pathlib.Path, *, dry_run: bool) -> None:
         path.mkdir(parents=True, exist_ok=True)
 
 
-def _link_video(
-    source: pathlib.Path,
-    target: pathlib.Path,
-    *,
-    dry_run: bool,
-    verbose: bool,
-) -> bool:
-    """Hardlink source to target, replacing any existing file at target.
-
-    Returns True if a (re)link happened, False if target already pointed at source.
-    """
-    if target.exists():
-        if target.samefile(source):
-            if verbose:
-                log.info("Target video file '%s' already exists", target.name)
-            return False
-        log.info("Replacing video file '%s' → '%s'", source.name, target.name)
-        if dry_run:
-            log.info("DELETE %s", target)
-        else:
-            target.unlink()
-    if dry_run:
-        log.info("LINK   %s", target)
-    else:
-        log.info("Linking video file '%s' → '%s'", source.name, target.name)
-        target.hardlink_to(source)
-    return True
-
-
 def _remove_strays(
     target_path: pathlib.Path,
     base_dir: pathlib.Path,
     keep: set[str],
     *,
     dry_run: bool,
+    events: list[FileEvent] | None = None,
 ) -> int:
     if not target_path.is_dir():
         return 0
@@ -231,20 +234,26 @@ def _remove_strays(
             )
             utils.remove(entry)
         removed += 1
+        if events is not None:
+            events.append(FileEvent(action="remove", target=entry, context="movie_stray"))
     return removed
 
 
 def process_movie(
-    source: MediaLibrary,
-    target: MediaLibrary,
+    source: LibraryReader,
+    target: LibraryWriter,
     source_path: pathlib.Path,
     movie: MovieInfo,
     *,
+    materializer: FileMaterializer | None = None,
+    reporter: Reporter | None = None,
     dry_run: bool = False,
     delete: bool = False,
     verbose: bool = False,
 ) -> MovieStats:
-    target_path = target.movie_path(movie)
+    materializer = materializer or HardlinkMaterializer()
+    reporter = reporter or LoggingReporter()
+    target_path = movie_path(target, movie, reporter)
 
     if verbose:
         log.info("Processing '%s' → '%s'", source_path.name, target_path.name)
@@ -252,62 +261,88 @@ def process_movie(
     stats = MovieStats()
     videos_to_sync: dict[str, tuple[pathlib.Path, pathlib.Path]] = {}
     assets_to_sync: dict[str, tuple[pathlib.Path, pathlib.Path]] = {}
+    loose_to_sync: dict[str, tuple[pathlib.Path, pathlib.Path]] = {}
 
     for entry in source_path.glob("*"):
+        if entry.name.startswith("."):
+            # OS/sync-tool junk (.DS_Store, .stversions, …) — skipped in both
+            # file and folder form, consistent with historical dot-folder
+            # handling.
+            log.debug("Ignoring dot-entry '%s'", entry.name)
+            continue
         if entry.is_file() and entry.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
-            video = source.parse_video_path(entry)
-            video_path = target.video_path(movie, video)
-            if video_path.name in videos_to_sync:
+            video = source.parse_video(entry)
+            dst_video_path = video_path(target, movie, video, reporter)
+            if dst_video_path.name in videos_to_sync:
                 log.error("Conflicting video file '%s'. Aborting.", entry.name)
                 return MovieStats()
-            videos_to_sync[video_path.name] = (entry, video_path)
+            videos_to_sync[dst_video_path.name] = (entry, dst_video_path)
             stats.videos_total += 1
+        elif entry.is_file():
+            # Loose top-level files (poster, nfo, subtitles, user notes) are
+            # synced 1:1 with their original name. Pre-0.2.0 they were
+            # silently dropped, which made jellyplex-sync unsafe for
+            # migrations.
+            loose_to_sync[entry.name] = (entry, target_path / entry.name)
+            stats.loose_files_total += 1
         elif entry.is_dir():
-            # Skip dotfolders (e.g. .DS_Store, .stversions)
-            if entry.name.startswith("."):
-                log.debug("Ignoring asset folder '%s'", entry.name)
-                continue
             assets_to_sync[entry.name] = (entry, target_path / entry.name)
 
     _ensure_dir(target_path, dry_run=dry_run)
 
     for src_video, dst_video in videos_to_sync.values():
-        if _link_video(src_video, dst_video, dry_run=dry_run, verbose=verbose):
+        if materializer.materialize(
+            src_video, dst_video, dry_run=dry_run, verbose=verbose, events=stats.events,
+        ):
             stats.videos_linked += 1
 
+    for src_file, dst_file in loose_to_sync.values():
+        if materializer.materialize(
+            src_file, dst_file, dry_run=dry_run, verbose=verbose, events=stats.events,
+        ):
+            stats.loose_files_linked += 1
+
     if delete:
-        keep = set(videos_to_sync) | set(assets_to_sync)
+        keep = set(videos_to_sync) | set(assets_to_sync) | set(loose_to_sync)
         stats.items_removed += _remove_strays(
-            target_path, target.base_dir, keep, dry_run=dry_run,
+            target_path, target.base_dir, keep, dry_run=dry_run, events=stats.events,
         )
 
     for src_asset, dst_asset in assets_to_sync.values():
         s = process_assets_folder(
-            src_asset, dst_asset, delete=delete, verbose=verbose, dry_run=dry_run,
+            src_asset,
+            dst_asset,
+            materializer=materializer,
+            delete=delete,
+            verbose=verbose,
+            dry_run=dry_run,
         )
         stats.asset_items_total += s.files_total
         stats.asset_items_linked += s.files_linked
         stats.asset_items_removed += s.items_removed
+        stats.events.extend(s.events)
 
     return stats
 
 
-def guess_library_type(path: pathlib.Path) -> type[MediaLibrary] | None:
+def guess_library_type(path: pathlib.Path) -> type[LibraryReader] | None:
+    """Best-effort detection of the on-disk library format.
+
+    Returns the matching `LibraryReader` class, or `None` if the heuristic
+    can't decide.
+    """
     plex_hints: int = 0
     jellyfin_hints: int = 0
     for entry in path.rglob("*"):
         if entry.suffix.lower() not in ACCEPTED_VIDEO_SUFFIXES:
             continue
         fname = entry.stem
-        # Check for provider id
         if re.search(r"\[[a-z]+id-[^\]]+\]", fname, flags=re.IGNORECASE):
-            return JellyfinLibrary
+            return JellyfinLibraryReader
         if re.search(r"\{[a-z]+-[^\}]+\}", fname, flags=re.IGNORECASE):
-            return PlexLibrary
-        # Check for Plex edition
+            return PlexLibraryReader
         if re.search(r"\{edition-[^\}]+\}", fname, flags=re.IGNORECASE):
-            return PlexLibrary
-        # Check for hints
+            return PlexLibraryReader
         variant = fname.split(" - ")
         if len(variant) > 1 and re.search(r"\(\d{4}\)", variant[-1]) is None:
             jellyfin_hints += 1
@@ -316,10 +351,48 @@ def guess_library_type(path: pathlib.Path) -> type[MediaLibrary] | None:
         if re.search(r"\[[a-z0-9\.\,]+\]", fname, flags=re.IGNORECASE):
             plex_hints += 1
     if plex_hints > jellyfin_hints:
-        return PlexLibrary
+        return PlexLibraryReader
     elif jellyfin_hints > plex_hints:
-        return JellyfinLibrary
+        return JellyfinLibraryReader
     return None
+
+
+def _opposite(short: str) -> str:
+    return "plex" if short == "jellyfin" else "jellyfin"
+
+
+def _resolve_formats(
+    source_path: pathlib.Path,
+    source_format: str | None,
+    target_format: str | None,
+) -> tuple[str, str] | None:
+    """Pick source and target shortnames from --source-format/--target-format.
+
+    Either side may be "auto" (or None): the source is then sniffed from disk,
+    and the target defaults to the opposite of the source. Both sides explicit
+    with the same value is the lint/normalize mode. Returns None and logs an
+    error if a needed format can't be determined.
+    """
+    src = source_format if source_format and source_format != "auto" else None
+    tgt = target_format if target_format and target_format != "auto" else None
+
+    for label, value in (("source_format", src), ("target_format", tgt)):
+        if value is not None and value not in _LIBRARY_TYPES:
+            raise ValueError(f"Unknown value for parameter {label!r}: {value!r}")
+
+    if src is None:
+        source_type = guess_library_type(source_path)
+        if not source_type:
+            log.error(
+                "Unable to determine source library type, please provide --source-format"
+            )
+            return None
+        src = source_type.shortname()
+
+    if tgt is None:
+        tgt = _opposite(src)
+
+    return src, tgt
 
 
 def sync(
@@ -331,85 +404,292 @@ def sync(
     create: bool = False,
     verbose: bool = False,
     debug: bool = False,
-    convert_to: str | None = None,
+    source_format: str | None = None,
+    target_format: str | None = None,
+    reporter: Reporter | None = None,
+    materializer: FileMaterializer | None = None,
+    stats: LibraryStats | None = None,
 ) -> int:
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    reporter = reporter or LoggingReporter()
+    materializer = materializer or HardlinkMaterializer()
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
 
-    if not convert_to or convert_to == "auto":
-        source_type = guess_library_type(source_path)
-        if not source_type:
-            log.error(
-                "Unable to determine source library type, please provide --convert-to option"
-            )
-            return 1
-        target_type = PlexLibrary if source_type == JellyfinLibrary else JellyfinLibrary
-    elif convert_to in (JellyfinLibrary.shortname(), PlexLibrary.shortname()):
-        target_type = PlexLibrary if convert_to == PlexLibrary.shortname() else JellyfinLibrary
-        source_type = PlexLibrary if target_type == JellyfinLibrary else JellyfinLibrary
-    else:
-        raise ValueError("Unknown value for parameter 'convert_to'")
+    resolved = _resolve_formats(source_path, source_format, target_format)
+    if resolved is None:
+        return 1
+    source_short, target_short = resolved
 
-    source_lib = source_type(source_path)
-    target_lib = target_type(target_path)
+    source_reader_cls, _ = _LIBRARY_TYPES[source_short]
+    _, target_writer_cls = _LIBRARY_TYPES[target_short]
+    source_reader = source_reader_cls(source_path)
+    target_writer = target_writer_cls(target_path)
 
     if dry_run:
-        log.info("SOURCE %s", source_lib.base_dir)
-        log.info("TARGET %s", target_lib.base_dir)
-        log.info(
-            "CONVERTING %s TO %s",
-            source_lib.shortname().capitalize(),
-            target_lib.shortname().capitalize(),
-        )
+        log.info("SOURCE %s", source_reader.base_dir)
+        log.info("TARGET %s", target_writer.base_dir)
+        log.info("CONVERTING %s TO %s", source_short.capitalize(), target_short.capitalize())
     else:
         log.info(
             "Syncing '%s' (%s) to '%s' (%s)",
-            source_lib.base_dir,
-            source_lib.shortname().capitalize(),
-            target_lib.base_dir,
-            target_lib.shortname().capitalize(),
+            source_reader.base_dir,
+            source_short.capitalize(),
+            target_writer.base_dir,
+            target_short.capitalize(),
         )
 
-    if not source_lib.base_dir.is_dir():
-        log.error("Source directory '%s' does not exist", source_lib.base_dir)
+    if not source_reader.base_dir.is_dir():
+        log.error("Source directory '%s' does not exist", source_reader.base_dir)
         return 1
 
-    if not target_lib.base_dir.is_dir():
+    if not target_writer.base_dir.is_dir():
         if create:
-            target_lib.base_dir.mkdir(parents=True)
+            target_writer.base_dir.mkdir(parents=True)
         else:
-            log.error("Target directory '%s' does not exist", target_lib.base_dir)
+            log.error("Target directory '%s' does not exist", target_writer.base_dir)
             return 1
 
-    lib_stats = LibraryStats()
-    items_linked = 0
-    items_removed = 0
+    lib_stats = stats if stats is not None else LibraryStats()
 
     for src, _, movie in scan_media_library(
-        source_lib, target_lib, delete=delete, dry_run=dry_run, stats=lib_stats
+        source_reader,
+        target_writer,
+        reporter=reporter,
+        delete=delete,
+        dry_run=dry_run,
+        stats=lib_stats,
     ):
         s = process_movie(
-            source_lib,
-            target_lib,
+            source_reader,
+            target_writer,
             src,
             movie,
+            materializer=materializer,
+            reporter=reporter,
             delete=delete,
             verbose=verbose,
             dry_run=dry_run,
         )
-        items_linked += s.asset_items_linked + s.videos_linked
-        items_removed += s.asset_items_removed + s.items_removed
+        lib_stats.items_linked += s.asset_items_linked + s.videos_linked + s.loose_files_linked
+        lib_stats.movie_items_removed += s.asset_items_removed + s.items_removed
+        lib_stats.events.extend(s.events)
 
-    items_removed += lib_stats.items_removed
+    total_removed = lib_stats.items_removed + lib_stats.movie_items_removed
+    ignored_count = len(lib_stats.ignored)
+    stray_count = len(lib_stats.strays_in_target)
+    # Strays that were *kept* (only meaningful without --delete; with --delete
+    # they were removed and already counted in total_removed).
+    strays_kept = stray_count if not delete else 0
 
     summary = (
         f"Summary: {lib_stats.movies_processed} of {lib_stats.movies_total} movies synced, "
-        f"{items_linked} files updated, "
-        f"{items_removed} files removed."
+        f"{lib_stats.items_linked} files updated, "
+        f"{total_removed} files removed, "
+        f"{ignored_count} ignored, "
+        f"{strays_kept} strays kept in target."
     )
     log.info(summary)
 
+    if lib_stats.ignored:
+        log.info("Ignored root-level item(s) — these are NOT in the target:")
+        for item in lib_stats.ignored:
+            log.info("  '%s' (%s)", item.path.name, item.reason)
+
+    if strays_kept:
+        log.warning(
+            "%d item(s) in target are not in the source library. "
+            "Pass --delete to remove them (target then becomes a clean mirror).",
+            strays_kept,
+        )
+
     return 0
+
+
+# ---------------------------------------------------------------------------
+# diff: read-only comparison of source and target
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DiffEntry:
+    """Per-movie diff between expected target and actual target contents."""
+
+    target_movie_name: str
+    only_in_source: tuple[str, ...] = ()
+    only_in_target: tuple[str, ...] = ()
+
+
+@dataclass
+class DiffResult:
+    movies_only_in_source: tuple[str, ...] = ()
+    movies_only_in_target: tuple[str, ...] = ()
+    differing_movies: tuple[DiffEntry, ...] = ()
+    drops: tuple = ()
+    ignored: tuple[IgnoredEntry, ...] = ()
+
+    @property
+    def has_differences(self) -> bool:
+        return bool(
+            self.movies_only_in_source
+            or self.movies_only_in_target
+            or self.differing_movies
+        )
+
+
+def diff(
+    source: str,
+    target: str,
+    *,
+    debug: bool = False,
+    source_format: str | None = None,
+    target_format: str | None = None,
+    out=None,
+    as_json: bool = False,
+) -> int:
+    """Compare a source library against an existing target library.
+
+    Read-only: never touches the filesystem. Exit codes follow the Unix
+    `diff` convention — 0 if no differences, 1 if differences are found,
+    2 if there's a setup error. With `as_json=True`, emits the machine-
+    readable JSON document instead of the human-readable text report.
+    """
+    import sys
+
+    if debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    out = out or sys.stdout
+    source_path = pathlib.Path(source)
+    target_path = pathlib.Path(target)
+
+    resolved = _resolve_formats(source_path, source_format, target_format)
+    if resolved is None:
+        return 2
+    source_short, target_short = resolved
+
+    source_reader_cls, _ = _LIBRARY_TYPES[source_short]
+    _, target_writer_cls = _LIBRARY_TYPES[target_short]
+    source_reader = source_reader_cls(source_path)
+    target_writer = target_writer_cls(target_path)
+
+    if not source_reader.base_dir.is_dir():
+        log.error("Source directory '%s' does not exist", source_reader.base_dir)
+        return 2
+    if not target_writer.base_dir.is_dir():
+        log.error("Target directory '%s' does not exist", target_writer.base_dir)
+        return 2
+
+    result = _compute_diff(source_reader, target_writer)
+    if as_json:
+        from .json_output import write_diff_json
+
+        write_diff_json(out, result, source_short, target_short, source_path, target_path)
+    else:
+        _print_diff(result, source_short, target_short, source_path, target_path, out)
+    return 1 if result.has_differences else 0
+
+
+def _compute_diff(source: LibraryReader, target: LibraryWriter) -> DiffResult:
+    reporter = CollectingReporter()
+    ignored: list[IgnoredEntry] = []
+
+    expected: dict[str, set[str]] = {}
+    for source_movie_path, movie in scan(source, ignored=ignored):
+        target_movie_name = target.movie_name(movie, reporter)
+        expected_files: set[str] = set()
+        for entry in source_movie_path.glob("*"):
+            if entry.name.startswith("."):
+                continue
+            if entry.is_file() and entry.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
+                video = source.parse_video(entry)
+                expected_files.add(target.video_name(movie, video, reporter))
+            elif entry.is_file() or entry.is_dir():
+                expected_files.add(entry.name)
+        expected[target_movie_name] = expected_files
+
+    actual: dict[str, set[str]] = {}
+    for entry in target.base_dir.iterdir():
+        if not entry.is_dir():
+            continue
+        actual[entry.name] = {sub.name for sub in entry.iterdir()}
+
+    only_source = sorted(set(expected) - set(actual))
+    only_target = sorted(set(actual) - set(expected))
+    differing: list[DiffEntry] = []
+    for name in sorted(set(expected) & set(actual)):
+        src_only = tuple(sorted(expected[name] - actual[name]))
+        tgt_only = tuple(sorted(actual[name] - expected[name]))
+        if src_only or tgt_only:
+            differing.append(
+                DiffEntry(
+                    target_movie_name=name,
+                    only_in_source=src_only,
+                    only_in_target=tgt_only,
+                )
+            )
+
+    return DiffResult(
+        movies_only_in_source=tuple(only_source),
+        movies_only_in_target=tuple(only_target),
+        differing_movies=tuple(differing),
+        drops=tuple(reporter.drops),
+        ignored=tuple(ignored),
+    )
+
+
+def _print_diff(
+    result: DiffResult,
+    source_short: str,
+    target_short: str,
+    source_path: pathlib.Path,
+    target_path: pathlib.Path,
+    out,
+) -> None:
+    print(
+        f"Comparing source '{source_path}' ({source_short.capitalize()}) "
+        f"against target '{target_path}' ({target_short.capitalize()})",
+        file=out,
+    )
+    print(file=out)
+
+    if result.movies_only_in_source:
+        print(f"Movies only in source ({len(result.movies_only_in_source)}):", file=out)
+        for name in result.movies_only_in_source:
+            print(f"  + {name}", file=out)
+        print(file=out)
+
+    if result.movies_only_in_target:
+        print(f"Movies only in target ({len(result.movies_only_in_target)}):", file=out)
+        for name in result.movies_only_in_target:
+            print(f"  - {name}", file=out)
+        print(file=out)
+
+    if result.differing_movies:
+        print(f"Movies with file differences ({len(result.differing_movies)}):", file=out)
+        for entry in result.differing_movies:
+            print(f"  ~ {entry.target_movie_name}", file=out)
+            for f in entry.only_in_source:
+                print(f"      + {f}", file=out)
+            for f in entry.only_in_target:
+                print(f"      - {f}", file=out)
+        print(file=out)
+
+    if result.drops:
+        distinct = dedupe_drops(list(result.drops))
+        print(f"Translation losses ({len(distinct)} distinct):", file=out)
+        for d in distinct:
+            key = f"{d.key}=" if d.key else ""
+            print(f"  ! {d.kind} {key}{d.value!r}: {d.reason}", file=out)
+        print(file=out)
+
+    if result.ignored:
+        print(f"Ignored in source ({len(result.ignored)}):", file=out)
+        for i in result.ignored:
+            print(f"  ! '{i.path.name}': {i.reason}", file=out)
+        print(file=out)
+
+    if not result.has_differences and not result.drops:
+        print("In sync. No differences found.", file=out)

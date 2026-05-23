@@ -6,14 +6,34 @@ on:
       - 'v*'
 
 jobs:
+  verify-version:
+    name: Verify tag matches pyproject version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare git tag with [project].version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')
+          echo "Git tag (stripped): $tag"
+          echo "pyproject version:  $ver"
+          if [ "$tag" != "$ver" ]; then
+              echo "::error::Git tag v$tag does not match [project].version $ver — bump pyproject.toml before tagging."
+              exit 1
+          fi
+          echo "OK: tag and pyproject version match."
+
   test:
     runs-on: ubuntu-latest
+    needs: verify-version
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
       - name: Run Tests
         run: uv run pytest
@@ -29,16 +49,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           # Full history is needed so `git describe` can find the previous
-          # v* tag for the commit-list release notes.
+          # v* tag and `git log` can walk the range for the release notes.
           fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
       - name: Build package
         run: uv build
 
-      - name: Generate release notes from commit log
+      - name: Generate release notes from commits between tags
+        # Release notes = full commit messages (subject + body) of every
+        # commit between the previous v* tag and this one, oldest first.
+        # Co-Authored-By trailers are stripped. Beats GitHub's default
+        # "Full Changelog" link with a real human-readable change list.
         run: |
           prev_tag=$(git describe --tags --abbrev=0 --match='v*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)
           if [ -n "$prev_tag" ]; then
@@ -49,7 +75,9 @@ jobs:
               echo "## Initial release" > release-notes.md
           fi
           echo "" >> release-notes.md
-          git log --no-merges --pretty='- %s' "$range" >> release-notes.md
+          git log --no-merges --reverse --pretty=tformat:'### %s%n%n%b%n' "$range" \
+            | sed '/^Co-Authored-By:/d' \
+            >> release-notes.md
           echo "--- release-notes.md ---"
           cat release-notes.md
 

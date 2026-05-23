@@ -1,25 +1,67 @@
 from .jellyfin import (
-    JellyfinLibrary,
+    JellyfinLibraryReader,
+    JellyfinLibraryWriter,
 )
 from .library import (
     ACCEPTED_VIDEO_SUFFIXES,
-    MediaLibrary,
+    CollectingReporter,
+    Drop,
+    DropError,
+    FileEvent,
+    IgnoredEntry,
+    LibraryReader,
+    LibraryWriter,
+    LoggingReporter,
+    Reporter,
+    StrictReporter,
+    dedupe_drops,
+)
+from .materializer import (
+    CopyMaterializer,
+    FileMaterializer,
+    ForceCopyMaterializer,
+    HardlinkMaterializer,
+)
+from .model import (
     MovieInfo,
     VideoInfo,
 )
 from .plex import (
-    PlexLibrary,
+    PlexLibraryReader,
+    PlexLibraryWriter,
 )
 from .sync import (
+    DiffEntry,
+    DiffResult,
+    diff,
     sync,
 )
 
 __all__ = [
     "ACCEPTED_VIDEO_SUFFIXES",
-    "JellyfinLibrary",
-    "MediaLibrary",
+    "CollectingReporter",
+    "CopyMaterializer",
+    "DiffEntry",
+    "DiffResult",
+    "Drop",
+    "DropError",
+    "FileEvent",
+    "FileMaterializer",
+    "ForceCopyMaterializer",
+    "HardlinkMaterializer",
+    "IgnoredEntry",
+    "JellyfinLibraryReader",
+    "JellyfinLibraryWriter",
+    "LibraryReader",
+    "LibraryWriter",
+    "LoggingReporter",
     "MovieInfo",
-    "PlexLibrary",
+    "PlexLibraryReader",
+    "PlexLibraryWriter",
+    "Reporter",
+    "StrictReporter",
     "VideoInfo",
+    "dedupe_drops",
+    "diff",
     "sync",
 ]

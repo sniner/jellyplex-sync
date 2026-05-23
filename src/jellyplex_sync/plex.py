@@ -3,122 +3,107 @@ from __future__ import annotations
 import logging
 import pathlib
 import re
-from collections.abc import Generator
 
-from .library import (
-    RESOLUTION_PATTERN,
-    MediaLibrary,
-    MovieInfo,
-    VideoInfo,
-)
+from .library import LoggingReporter, Reporter
+from .model import MovieInfo, VideoInfo
 
 log = logging.getLogger(__name__)
 
 
-PLEX_MOVIE_PATTERN = re.compile(r"^(?P<title>.+?)\s+\((?P<year>\d{4})\)")
-PLEX_META_BLOCK_PATTERN = re.compile(r"(\{([A-Za-z]+)-([^}]+)\})")
-PLEX_META_INFO_PATTERN = re.compile(r"(\[([^]]+)\])")
-PLEX_METADATA_PROVIDER = {"imdb", "tmdb", "tvdb"}
+_PLEX_TITLE_YEAR = re.compile(r"^(?P<title>.+?)\s+\((?P<year>\d{4})\)")
+_PLEX_BRACE_BLOCK = re.compile(r"(\{([A-Za-z]+)-([^}]+)\})")
+_PLEX_BRACKET_BLOCK = re.compile(r"(\[([^]]+)\])")
+_PLEX_PROVIDERS = ("imdb", "tmdb", "tvdb")
 
 
-class PlexLibrary(MediaLibrary):
+class _PlexBase:
+    def __init__(self, base_dir: pathlib.Path):
+        self.base_dir = base_dir.resolve()
+
     @classmethod
     def shortname(cls) -> str:
         return "plex"
 
-    def movie_name(self, movie: MovieInfo) -> str:
-        parts = [movie.title]
-        if movie.year:
-            parts.append(f"({movie.year})")
-        if movie.provider and movie.movie_id:
-            parts.append(f"{{{movie.provider}-{movie.movie_id}}}")
-        return " ".join(parts)
 
-    def video_name(self, movie: MovieInfo, video: VideoInfo) -> str:
-        parts = [self.movie_name(movie)]
-        if video.edition:
-            parts.append(f"{{edition-{video.edition}}}")
-        if video.tags:
-            tags = [f"[{t}]" for t in video.tags]
-            parts.append("".join(tags))
-        if video.resolution:
-            parts.append(f"[{video.resolution}]")
-        return f"{' '.join(parts)}{video.extension}"
-
-    def _parse_meta_blocks(self, name: str) -> Generator[tuple[str, str, str], None, None]:
-        # Find all '{KEY-VALUE}' instances
-        for blk, key, val in PLEX_META_BLOCK_PATTERN.findall(name):
-            yield key, val, blk
-
-    def _parse_info_blocks(self, name: str) -> Generator[tuple[str, str], None, None]:
-        # Find all '[METADATA]' instances
-        for blk, info in PLEX_META_INFO_PATTERN.findall(name):
-            yield info, blk
-
-    def parse_movie_path(self, path: pathlib.Path) -> MovieInfo | None:
+class PlexLibraryReader(_PlexBase):
+    def parse_movie(self, path: pathlib.Path) -> MovieInfo | None:
         name = path.name
-
-        # Find metadata provider and movie id
         leftover = name
-        provider = movie_id = None
-        for key, val, blk in self._parse_meta_blocks(name):
-            p = key.lower()
-            if p in PLEX_METADATA_PROVIDER:
-                provider = p.strip()
-                movie_id = val.strip()
+        attributes: dict[str, str] = {}
+
+        for blk, key, val in _PLEX_BRACE_BLOCK.findall(name):
+            k = key.lower()
+            if k in _PLEX_PROVIDERS:
+                attributes[k] = val.strip()
             leftover = leftover.replace(blk, "")
 
-        # Remove additional metadata
-        for _info, blk in self._parse_info_blocks(leftover):
+        for blk, _info in _PLEX_BRACKET_BLOCK.findall(leftover):
             leftover = leftover.replace(blk, "")
 
-        # Cleanup remaining text
-        leftover = re.sub(r"\s+", " ", leftover)
-        leftover = leftover.strip()
+        leftover = re.sub(r"\s+", " ", leftover).strip()
 
-        # Parse movie title and year
-        match = PLEX_MOVIE_PATTERN.match(leftover)
+        match = _PLEX_TITLE_YEAR.match(leftover)
         if match:
             title = match.group("title").strip()
-            year = match.group("year") if "year" in match.groupdict() else None
+            year: str | None = match.group("year")
         else:
             title = leftover
             year = None
 
-        if title:
-            return MovieInfo(title=title, year=year, provider=provider, movie_id=movie_id)
-        else:
+        if not title:
             return None
+        return MovieInfo(title=title, year=year, attributes=attributes)
 
-    def parse_video_path(self, path: pathlib.Path) -> VideoInfo:
+    def parse_video(self, path: pathlib.Path) -> VideoInfo:
         name = path.stem
         leftover = name
+        attributes: dict[str, str] = {}
+        labels: list[str] = []
 
-        # Find edition
-        edition: str | None = None
-        for key, val, blk in self._parse_meta_blocks(name):
+        for blk, key, val in _PLEX_BRACE_BLOCK.findall(name):
             if key.lower() == "edition":
-                edition = val
+                attributes["edition"] = val
             leftover = leftover.replace(blk, "")
 
-        # Find additional metadata
-        tags: set[str] = set()
-        resolution: str | None = None
-        for info, blk in self._parse_info_blocks(leftover):
-            tag = info.strip()
-            if RESOLUTION_PATTERN.match(tag):
-                resolution = tag
-            else:
-                tags.add(tag)
+        for blk, info in _PLEX_BRACKET_BLOCK.findall(leftover):
+            labels.append(info.strip())
             leftover = leftover.replace(blk, "")
-
-        # Cleanup remaining text
-        leftover = re.sub(r"\s+", " ", leftover)
-        leftover = leftover.strip()
 
         return VideoInfo(
-            edition=edition,
             extension=path.suffix,
-            resolution=resolution,
-            tags=tags if tags else None,
+            attributes=attributes,
+            labels=tuple(labels),
         )
+
+
+class PlexLibraryWriter(_PlexBase):
+    def movie_name(self, movie: MovieInfo, reporter: Reporter | None = None) -> str:
+        _ = reporter  # Plex never drops; reporter accepted for protocol compatibility.
+        parts = [movie.title]
+        if movie.year:
+            parts.append(f"({movie.year})")
+        for provider in _PLEX_PROVIDERS:
+            if provider in movie.attributes:
+                parts.append(f"{{{provider}-{movie.attributes[provider]}}}")
+        for label in movie.labels:
+            parts.append(f"[{label}]")
+        return " ".join(parts)
+
+    def video_name(
+        self, movie: MovieInfo, video: VideoInfo, reporter: Reporter | None = None
+    ) -> str:
+        reporter = reporter or LoggingReporter()
+        parts = [self.movie_name(movie, reporter)]
+        # Plex puts edition first among video attributes, then any others.
+        if "edition" in video.attributes:
+            parts.append(f"{{edition-{video.attributes['edition']}}}")
+        for key, value in video.attributes.items():
+            if key == "edition":
+                continue
+            parts.append(f"{{{key}-{value}}}")
+        # Labels go at the end. Plex ignores `[bracket]` content entirely, so
+        # this is the safe round-trip channel for anything we couldn't
+        # express elsewhere.
+        for label in video.labels:
+            parts.append(f"[{label}]")
+        return f"{' '.join(parts)}{video.extension}"

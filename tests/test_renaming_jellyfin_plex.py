@@ -6,13 +6,13 @@ import jellyplex_sync as jp
 
 
 @pytest.fixture
-def jlib() -> jp.JellyfinLibrary:
-    return jp.JellyfinLibrary(Path("./Jellyfin"))
+def jreader() -> jp.JellyfinLibraryReader:
+    return jp.JellyfinLibraryReader(Path("./Jellyfin"))
 
 
 @pytest.fixture
-def plib() -> jp.PlexLibrary:
-    return jp.PlexLibrary(Path("./Plex"))
+def pwriter() -> jp.PlexLibraryWriter:
+    return jp.PlexLibraryWriter(Path("./Plex"))
 
 
 SAMPLES_FULL_PATH = [
@@ -98,17 +98,19 @@ SAMPLES_FILENAME = [
 @pytest.mark.parametrize(
     "path,expected", SAMPLES_FULL_PATH, ids=[str(p) for p, _ in SAMPLES_FULL_PATH]
 )
-def test_jellyfin_to_plex_full(jlib: jp.JellyfinLibrary, plib: jp.PlexLibrary, path, expected):
-    source_path = Path(jlib.base_dir, path)
+def test_jellyfin_to_plex_full(
+    jreader: jp.JellyfinLibraryReader, pwriter: jp.PlexLibraryWriter, path, expected
+):
+    source_path = Path(jreader.base_dir, path)
 
-    movie = jlib.parse_movie_path(source_path.parent)
+    movie = jreader.parse_movie(source_path.parent)
     assert movie is not None
 
-    video = jlib.parse_video_path(source_path)
+    video = jreader.parse_video(source_path)
     assert video is not None
 
-    target_movie = plib.movie_name(movie)
-    target_video = plib.video_name(movie, video)
+    target_movie = pwriter.movie_name(movie)
+    target_video = pwriter.video_name(movie, video)
     target_path = Path("/", target_movie, target_video)
 
     assert str(target_path) == expected, f"Failed on path: {path}"
@@ -117,18 +119,20 @@ def test_jellyfin_to_plex_full(jlib: jp.JellyfinLibrary, plib: jp.PlexLibrary, p
 @pytest.mark.parametrize(
     "path,expected", SAMPLES_FILENAME, ids=[str(p) for p, _ in SAMPLES_FILENAME]
 )
-def test_jellyfin_to_plex_short(jlib: jp.JellyfinLibrary, plib: jp.PlexLibrary, path, expected):
-    source_path = Path(jlib.base_dir, path)
+def test_jellyfin_to_plex_short(
+    jreader: jp.JellyfinLibraryReader, pwriter: jp.PlexLibraryWriter, path, expected
+):
+    source_path = Path(jreader.base_dir, path)
 
     # Cheap trick: Fake the movie path
-    movie = jlib.parse_movie_path(Path(jlib.base_dir, source_path.stem))
+    movie = jreader.parse_movie(Path(jreader.base_dir, source_path.stem))
     assert movie is not None
 
-    video = jlib.parse_video_path(source_path)
+    video = jreader.parse_video(source_path)
     assert video is not None
 
-    target_movie = plib.movie_name(movie)
-    target_video = plib.video_name(movie, video)
+    target_movie = pwriter.movie_name(movie)
+    target_video = pwriter.video_name(movie, video)
     target_path = Path("/", target_movie, target_video)
 
     assert target_path.name == expected, f"Failed on path: {path}"
