@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.2.0] - 2026-05-23
 
 ### Breaking changes
 - **`--convert-to`** removed in favour of **`--source-format`** and **`--target-format`**
@@ -86,6 +86,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `LibraryStats.events`, `MovieStats.events`, `AssetStats.events` accumulate them.
   `FileMaterializer.materialize()` gained an `events: list[FileEvent] | None = None`
   parameter — backward compatible
+
+### Changed
+- **README rewritten** for the 0.2.0 surface — subcommand-first invocation, dedicated
+  `diff` and `--json` sections with jq recipes, materializer flag explanations, and a
+  banner at the top calling out the major-rewrite nature with dry-run / pin-to-0.1.x
+  escape hatches
+- **`DEV.md` gained an "Extras subdirectories" section** documenting the Plex vs Jellyfin
+  extras conventions, with the `Other` vs `extras` footgun and the lowercase-`other`
+  portable choice
+- **Test suite grew from ~120 to 176 tests** covering the Reader/Writer split, all three
+  materializer backends, the JSON output schema, ignored / strays / events accumulation,
+  and translation-loss dedupe behavior
 
 ## [0.1.6] - 2026-05-21
 
