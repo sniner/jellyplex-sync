@@ -23,7 +23,7 @@ RESOLUTION_PATTERN = re.compile(r"\d{3,4}[pi]$")
 
 @dataclass
 class Drop:
-    kind: Literal["tag", "attribute"]
+    kind: Literal["label", "attribute"]
     key: str | None
     value: str
     reason: str

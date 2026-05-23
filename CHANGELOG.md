@@ -27,14 +27,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`MediaLibrary` ABC split** into `LibraryReader` and `LibraryWriter` Protocols, and the
   translation logic was lifted out into a dedicated layer. `MovieInfo`/`VideoInfo` lost the
   library-specific fields (`provider`, `movie_id`, `edition`, `resolution`) in favour of
-  two open containers: an `attributes` dict (for `{key-value}` style) and a `tags` tuple
+  two open containers: an `attributes` dict (for `{key-value}` style) and a `labels` tuple
   (for `[bracket]` style). `parse_movie_path` was renamed to `parse_movie`. Affects any
   caller using the Python API directly; CLI users see no change
 
 ### Added
 - **`diff` subcommand** — read-only comparison of source and target libraries. Reports
   movies only on one side, file-level differences on shared movies, and translation losses
-  (tags/attributes the target format can't express). Exit codes follow Unix `diff`
+  (labels/attributes the target format can't express). Exit codes follow Unix `diff`
   convention: 0 = in sync, 1 = differences, 2 = setup error
 - **`--copy` / `--force-copy` materializers** — alternatives to the default `--hardlink`
   mode for environments where hardlinks aren't an option. `--copy` skips files whose target
@@ -44,7 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `CollectingReporter`) — Writers report lossy translations through a Reporter, and callers
   decide how to surface them. `CollectingReporter` powers the `diff` translation-loss section
 - **Lint / normalize mode** — setting `--source-format` and `--target-format` to the same value
-  rewrites a library in its own format (e.g. to canonicalize Plex tags against the current
+  rewrites a library in its own format (e.g. to canonicalize Plex labels against the current
   layout rules). Works for both `sync` and `diff`
 
 ## [0.1.6] - 2026-05-21

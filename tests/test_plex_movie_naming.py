@@ -40,8 +40,8 @@ SANE_SAMPLES = [
 
 NOT_RECOMMENDED_SAMPLES = [
     (
-        # Tags in movie folder name (unsure if Plex would accept this)
-        Path("First movie {imdb-tt123456} [tag1][tag2]"),
+        # Labels in movie folder name (unsure if Plex would accept this)
+        Path("First movie {imdb-tt123456} [label1][label2]"),
         jp.MovieInfo(title="First movie", attributes={"imdb": "tt123456"}),
     ),
 ]

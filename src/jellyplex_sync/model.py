@@ -8,7 +8,7 @@ class VideoInfo:
     """Format-neutral description of a single video file.
 
     `attributes` carry the `{key-value}` style structured metadata (e.g.
-    `edition` in Plex). `tags` carry the free-form `[bracket]` style
+    `edition` in Plex). `labels` carry the free-form `[bracket]` style
     markers (e.g. resolution shorthand, source markers). Writers decide
     which of these survive the trip into their target format and which
     have to be dropped — see Reporter in library.py.
@@ -16,7 +16,7 @@ class VideoInfo:
 
     extension: str
     attributes: dict[str, str] = field(default_factory=dict)
-    tags: tuple[str, ...] = ()
+    labels: tuple[str, ...] = ()
 
 
 @dataclass
@@ -32,4 +32,4 @@ class MovieInfo:
     title: str
     year: str | None = None
     attributes: dict[str, str] = field(default_factory=dict)
-    tags: tuple[str, ...] = ()
+    labels: tuple[str, ...] = ()

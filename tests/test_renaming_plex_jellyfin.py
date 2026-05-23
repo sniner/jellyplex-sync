@@ -76,7 +76,7 @@ SAMPLES_FILENAME = [
         "First movie (1984) [1080p] {edition-Yeah}.mkv",
         "First movie (1984) - BD Yeah.mkv",
     ),
-    # The samples below show lossy conversions because Jellyfin does not support tags or labels
+    # The samples below show lossy conversions because Jellyfin does not support free [bracket] labels
     (
         "First movie (1984) {imdb-tt123456}{edition-Director's Cut}[remux][1080p].mkv",
         "First movie (1984) [imdbid-tt123456] - BD Director's Cut.mkv",

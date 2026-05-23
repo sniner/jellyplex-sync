@@ -16,7 +16,7 @@ _JELLYFIN_TITLE_YEAR = re.compile(
     r"^(?P<title>.+?)(?:\s+\((?P<year>\d{4})\))?(?:\s*-\s*)?$"
 )
 
-# Maps any resolution-like tag string we may see to the canonical Plex form.
+# Maps any resolution-like label string we may see to the canonical Plex form.
 # Used by the parser when interpreting Jellyfin version labels.
 _SHORTHAND_TO_CANONICAL = {
     "dvd": "DVD",
@@ -24,8 +24,8 @@ _SHORTHAND_TO_CANONICAL = {
     "4k": "2160p",
 }
 
-# Maps a canonical Plex resolution tag (or already-shorthand input) to the
-# Jellyfin label shorthand. Used by the writer.
+# Maps a canonical Plex resolution label (or already-shorthand input) to the
+# Jellyfin version-label shorthand. Used by the writer.
 _CANONICAL_TO_SHORTHAND = {
     "DVD": "DVD",
     "BD": "BD",
@@ -108,8 +108,8 @@ class JellyfinLibraryReader(_JellyfinBase):
         attributes: dict[str, str] = {}
         if edition:
             attributes["edition"] = edition
-        tags = (resolution,) if resolution else ()
-        return VideoInfo(extension=extension, attributes=attributes, tags=tags)
+        labels = (resolution,) if resolution else ()
+        return VideoInfo(extension=extension, attributes=attributes, labels=labels)
 
 
 class JellyfinLibraryWriter(_JellyfinBase):
@@ -149,13 +149,13 @@ class JellyfinLibraryWriter(_JellyfinBase):
                     )
                 )
 
-        for tag in movie.tags:
+        for label in movie.labels:
             reporter.drop(
                 Drop(
-                    kind="tag",
+                    kind="label",
                     key=None,
-                    value=tag,
-                    reason="free [bracket] tags confuse the Jellyfin scanner",
+                    value=label,
+                    reason="free [bracket] labels confuse the Jellyfin scanner",
                 )
             )
         return " ".join(parts)
@@ -167,16 +167,16 @@ class JellyfinLibraryWriter(_JellyfinBase):
         base = self.movie_name(movie, reporter)
 
         resolution_label: str | None = None
-        for tag in video.tags:
-            shorthand = _CANONICAL_TO_SHORTHAND.get(tag) or _CANONICAL_TO_SHORTHAND.get(
-                tag.upper()
+        for label in video.labels:
+            shorthand = _CANONICAL_TO_SHORTHAND.get(label) or _CANONICAL_TO_SHORTHAND.get(
+                label.upper()
             )
             if shorthand is None:
                 reporter.drop(
                     Drop(
-                        kind="tag",
+                        kind="label",
                         key=None,
-                        value=tag,
+                        value=label,
                         reason="no equivalent in a Jellyfin version label",
                     )
                 )
@@ -186,10 +186,10 @@ class JellyfinLibraryWriter(_JellyfinBase):
             else:
                 reporter.drop(
                     Drop(
-                        kind="tag",
+                        kind="label",
                         key=None,
-                        value=tag,
-                        reason="multiple resolution tags; first one wins",
+                        value=label,
+                        reason="multiple resolution labels; first one wins",
                     )
                 )
 

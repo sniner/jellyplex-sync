@@ -13,9 +13,9 @@ upstream behavior, add it here.
 
 | Internal term | Shape in filenames | Examples |
 |---|---|---|
-| `tags` | `[free-form text]` (square brackets) | `[1080p]`, `[remux]`, `[amazon]` |
+| `labels` | `[free-form text]` (square brackets) | `[1080p]`, `[remux]`, `[amazon]` |
 | `attributes` | `{key-value}` (curly braces) | `{imdb-tt1234567}`, `{edition-Director's Cut}` |
-| `metadata` | umbrella term for tags + attributes + title + year | — |
+| `metadata` | umbrella term for labels + attributes + title + year | — |
 
 ### Cross-reference to upstream terminology
 
@@ -24,14 +24,17 @@ quoting their docs.
 
 | Internal | Plex docs say | Jellyfin docs say |
 |---|---|---|
-| `tags` (`[...]`) | not recognized — Plex silently ignores them | conflated with "version labels"; can confuse the scanner |
+| `labels` (`[...]`) | not recognized — Plex silently ignores them | conflated with "version labels"; can confuse the scanner |
 | `attributes` (`{...}`) | **"tags"** (curly-brace form only) | "metadata provider id" (ID variant only); editions are "version labels" |
 | `metadata` | — (no umbrella term) | — (no umbrella term) |
 
-Note the cross-system clash: Plex's documentation uses the word "tag"
-for the curly-brace form, which is the opposite of our convention.
-When you cite Plex docs, quote them in their terms and translate to
-internal vocabulary explicitly.
+We deliberately avoid the word "tag" internally: Plex's docs use it
+for the curly-brace form (which we call `attributes`), so calling our
+square-bracket concept "tags" would collide. When you cite Plex docs,
+quote them in their terms and translate to internal vocabulary
+explicitly. "Label" is also Jellyfin's word for its `- <suffix>`
+construct ("version label"); that is a different thing — Jellyfin
+labels live outside brackets, ours live inside them.
 
 ## Plex naming convention (official)
 
@@ -114,23 +117,23 @@ model, not a bug.
 |---|---|---|
 | `{imdb-tt...}` | `[imdbid-tt...]` | lossless |
 | `{edition-X}` | ` - X` (version label) | loses the *semantic* "this is an edition" marker |
-| `[tag]` recognised as resolution etc. | promoted to part of the version label | reshuffled, but preserved |
-| `[tag]` not recognised (e.g. `[amazon]`, `[rented]`) | **dropped** | Jellyfin would stumble on it |
+| `[label]` recognised as resolution etc. | promoted to part of the version label | reshuffled, but preserved |
+| `[label]` not recognised (e.g. `[amazon]`, `[rented]`) | **dropped** | Jellyfin would stumble on it |
 
 ### Jellyfin → Plex
 
 | Element | Translation | Loss |
 |---|---|---|
 | `[imdbid-tt...]` | `{imdb-tt...}` | lossless |
-| ` - X` | heuristic split: resolution-shaped pieces → Plex `[tag]`, remainder → `{edition-...}` | lossless when X parses cleanly |
-| residue that doesn't parse | dropped into Plex `[tag]` as catch-all | preserved (Plex ignores it anyway) |
+| ` - X` | heuristic split: resolution-shaped pieces → Plex `[label]`, remainder → `{edition-...}` | lossless when X parses cleanly |
+| residue that doesn't parse | dropped into Plex `[label]` as catch-all | preserved (Plex ignores it anyway) |
 
 ### The round-trip caveat
 
-`Plex → Jellyfin → Plex` is **not** identity for arbitrary `[tags]`. A
+`Plex → Jellyfin → Plex` is **not** identity for arbitrary `[labels]`. A
 Plex file with `[amazon]` survives a Plex → Plex sync but loses
 `[amazon]` after a hop through Jellyfin. This is fundamental to the
-model: Jellyfin has no place to put a free user tag without confusing
+model: Jellyfin has no place to put a free user label without confusing
 its scanner.
 
 When the migration mode (Paket 4) lands, this caveat needs to be
@@ -144,7 +147,7 @@ specific labels we emit, and the choice is deliberate.
 The rule: version labels ending in `p` or `i` sort **descending by
 resolution**; everything else sorts **alphabetically** (ASCII).
 
-When syncing Plex → Jellyfin, the resolution `[tags]` get mapped to
+When syncing Plex → Jellyfin, the resolution `[labels]` get mapped to
 shorthand labels: `[2160p]` → `4k`, `[1080p]` → `BD`, `[720p]` → `720p`,
 `[DVD]` → `DVD`. These shorthands are chosen so that the alphabetical
 sort order puts the *highest* quality first:
@@ -158,7 +161,7 @@ and gets auto-selected when the user opens the movie.
 
 ### Label construction: resolution first, edition second
 
-When a Plex source carries both a resolution `[tag]` and an
+When a Plex source carries both a resolution `[label]` and an
 `{edition-X}`, the Jellyfin label combines them as
 `<resolution> <edition>`, e.g. `- 4k Director's Cut`. The resolution
 must come first so that the alphabetic sort (`4k` < `BD` < `DVD`) wins
@@ -219,7 +222,7 @@ media server is one Reader + one Writer; nothing else changes.
 class VideoInfo:
     extension: str
     attributes: dict[str, str] = field(default_factory=dict)
-    tags: tuple[str, ...] = ()
+    labels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -227,19 +230,19 @@ class MovieInfo:
     title: str
     year: str | None = None
     attributes: dict[str, str] = field(default_factory=dict)
-    tags: tuple[str, ...] = ()
+    labels: tuple[str, ...] = ()
     videos: tuple[VideoInfo, ...] = ()
 ```
 
 - `attributes` carries `{key-value}` info (provider IDs, edition,
   future keys).
-- `tags` carries free-form `[...]` markers (resolution shorthand,
+- `labels` carries free-form `[...]` markers (resolution shorthand,
   source markers, user notes).
 - `videos` is a tuple because a single movie folder can hold multiple
   variants (different resolutions, editions).
 
 The Reader is liberal: anything it can't classify still gets a place
-in `attributes` or `tags`, so nothing gets lost on the input side.
+in `attributes` or `labels`, so nothing gets lost on the input side.
 
 ### Reader / Writer protocols (`library.py`)
 
@@ -270,8 +273,8 @@ to know about them.
 ```python
 @dataclass(frozen=True)
 class Drop:
-    kind: Literal["tag", "attribute"]
-    key: str | None       # attribute key, or None for tags
+    kind: Literal["label", "attribute"]
+    key: str | None       # attribute key, or None for labels
     value: str
     reason: str           # "not expressible in target", "exceeds length limit", ...
 

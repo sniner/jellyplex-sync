@@ -58,7 +58,7 @@ class PlexLibraryReader(_PlexBase):
         name = path.stem
         leftover = name
         attributes: dict[str, str] = {}
-        tags: list[str] = []
+        labels: list[str] = []
 
         for blk, key, val in _PLEX_BRACE_BLOCK.findall(name):
             if key.lower() == "edition":
@@ -66,13 +66,13 @@ class PlexLibraryReader(_PlexBase):
             leftover = leftover.replace(blk, "")
 
         for blk, info in _PLEX_BRACKET_BLOCK.findall(leftover):
-            tags.append(info.strip())
+            labels.append(info.strip())
             leftover = leftover.replace(blk, "")
 
         return VideoInfo(
             extension=path.suffix,
             attributes=attributes,
-            tags=tuple(tags),
+            labels=tuple(labels),
         )
 
 
@@ -85,8 +85,8 @@ class PlexLibraryWriter(_PlexBase):
         for provider in _PLEX_PROVIDERS:
             if provider in movie.attributes:
                 parts.append(f"{{{provider}-{movie.attributes[provider]}}}")
-        for tag in movie.tags:
-            parts.append(f"[{tag}]")
+        for label in movie.labels:
+            parts.append(f"[{label}]")
         return " ".join(parts)
 
     def video_name(
@@ -101,9 +101,9 @@ class PlexLibraryWriter(_PlexBase):
             if key == "edition":
                 continue
             parts.append(f"{{{key}-{value}}}")
-        # Tags go at the end. Plex ignores `[bracket]` content entirely, so
+        # Labels go at the end. Plex ignores `[bracket]` content entirely, so
         # this is the safe round-trip channel for anything we couldn't
         # express elsewhere.
-        for tag in video.tags:
-            parts.append(f"[{tag}]")
+        for label in video.labels:
+            parts.append(f"[{label}]")
         return f"{' '.join(parts)}{video.extension}"

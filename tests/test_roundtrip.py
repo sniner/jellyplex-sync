@@ -4,7 +4,7 @@ back to the original format should be idempotent for sane samples.
 This pins the symmetry of the translation layer. If symmetry breaks during
 future refactors, these tests catch it before the user does.
 
-Lossy paths (e.g. Plex tags that don't survive a hop through Jellyfin) are
+Lossy paths (e.g. Plex labels that don't survive a hop through Jellyfin) are
 deliberately excluded — those have one-way coverage in test_renaming_*.
 """
 

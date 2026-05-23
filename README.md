@@ -58,7 +58,7 @@ The first positional argument is the source library, the second is the target. B
 - `--verbose` — log every processed movie.
 - `--debug` — enable debug-level logging.
 - `--source-format {jellyfin,plex,auto}` — declare the source library format. `auto` (default) inspects the source layout.
-- `--target-format {jellyfin,plex,auto}` — declare the target library format. `auto` (default) picks the opposite of the source. Setting both flags to the same value puts the tool into lint/normalize mode (rewrite a library in its own format, e.g. to canonicalize tags).
+- `--target-format {jellyfin,plex,auto}` — declare the target library format. `auto` (default) picks the opposite of the source. Setting both flags to the same value puts the tool into lint/normalize mode (rewrite a library in its own format, e.g. to canonicalize labels).
 
 #### Examples
 
@@ -145,7 +145,7 @@ Each movie must reside in its own folder, with optional subfolders for extras. D
 
 #### Special filename handling
 
-Jellyfin doesn't distinguish between editions (e.g., Director's Cut) and versions (e.g., 1080p vs. 4K). To work around this, I appended tags like "DVD", "BD", or "4K" to filenames in my personal library, ensuring the highest quality appears first and is selected by default in Jellyfin. Plex, on the other hand, supports editions natively and handles different versions via naming patterns and its internal version management. These specific tags are converted into Plex versions, while all other suffixes are treated as editions.
+Jellyfin doesn't distinguish between editions (e.g., Director's Cut) and versions (e.g., 1080p vs. 4K). To work around this, I appended labels like "DVD", "BD", or "4K" to filenames in my personal library, ensuring the highest quality appears first and is selected by default in Jellyfin. Plex, on the other hand, supports editions natively and handles different versions via naming patterns and its internal version management. These specific labels are converted into Plex versions, while all other suffixes are treated as editions.
 
 This naming convention is something I came up with for my personal library — it's not part of any official Jellyfin standard. If your setup uses a different scheme, you may want to adjust the parsing behavior by switching to a different `VariantParser`, such as the simpler `SimpleVariantParser`.
 
@@ -153,13 +153,13 @@ This naming convention is something I came up with for my personal library — i
 
 Plex follows a more structured naming convention than Jellyfin. While Jellyfin typically appends edition or variant information using a ` - ` (space-hyphen-space) pattern, Plex supports additional metadata inside **curly braces** for editions and **square brackets** for versions or other details.
 
-Unlike Jellyfin, Plex's naming system allows you to embed extra tags such as release source (`[BluRay]`), quality (`[4K]`), or codec (`[HEVC]`) directly in the filename. These tags are ignored by the default Plex scanners during media recognition, but remain visible in the interface — which makes them useful for organizing your collection without affecting playback or matching.
+Unlike Jellyfin, Plex's naming system allows you to embed extra labels such as release source (`[BluRay]`), quality (`[4K]`), or codec (`[HEVC]`) directly in the filename. These labels are ignored by the default Plex scanners during media recognition, but remain visible in the interface — which makes them useful for organizing your collection without affecting playback or matching.
 
-> Note: This behavior applies to Plex's default scanner. If you use custom scanners or agents, they may treat these tags differently.
+> Note: This behavior applies to Plex's default scanner. If you use custom scanners or agents, they may treat these labels differently.
 
 I originally started with a Jellyfin-style library and converted it to be Plex-compatible. Over time, I came to prefer Plex's more expressive naming conventions and switched my personal collection to follow the Plex format. I now use Jellyfin mainly as a fallback for long-term archival and offline use.
 
-This is the expected folder structure in Plex format (with some demo tags):
+This is the expected folder structure in Plex format (with some demo labels):
 
 ```
 Movies

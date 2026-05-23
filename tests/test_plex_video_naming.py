@@ -41,7 +41,7 @@ SANE_SAMPLES = [
         jp.VideoInfo(
             extension=".mkv",
             attributes={"edition": "Director's Cut"},
-            tags=("DVD",),
+            labels=("DVD",),
         ),
     ),
     (
@@ -49,7 +49,7 @@ SANE_SAMPLES = [
         jp.VideoInfo(
             extension=".mkv",
             attributes={"edition": "Director's Cut"},
-            tags=("1080p",),
+            labels=("1080p",),
         ),
     ),
     (
@@ -57,20 +57,20 @@ SANE_SAMPLES = [
         jp.VideoInfo(
             extension=".mkv",
             attributes={"edition": "Director's Cut"},
-            tags=("1080p",),
+            labels=("1080p",),
         ),
     ),
     (
         Path("First movie (1970) {imdb-tt123456} [1080p][remux].mkv"),
-        jp.VideoInfo(extension=".mkv", tags=("1080p", "remux")),
+        jp.VideoInfo(extension=".mkv", labels=("1080p", "remux")),
     ),
 ]
 
 NOT_RECOMMENDED_SAMPLES = [
     (
-        # Tags all over the place
+        # Labels all over the place
         Path("First movie (1970) [remux] {imdb-tt123456} [1080p].mkv"),
-        jp.VideoInfo(extension=".mkv", tags=("remux", "1080p")),
+        jp.VideoInfo(extension=".mkv", labels=("remux", "1080p")),
     ),
     (
         # No spaces
@@ -80,7 +80,7 @@ NOT_RECOMMENDED_SAMPLES = [
         jp.VideoInfo(
             extension=".mkv",
             attributes={"edition": "Director's Cut"},
-            tags=("remux", "1080p", "hello world"),
+            labels=("remux", "1080p", "hello world"),
         ),
     ),
     (
@@ -92,9 +92,9 @@ NOT_RECOMMENDED_SAMPLES = [
 
 NOT_WORKING_SAMPLES = [
     (
-        # Tags all over the place (would Plex accept this?)
+        # Labels all over the place (would Plex accept this?)
         Path("First movie [hello] (1970) [remux] {imdb-tt123456} [1080p].mkv"),
-        jp.VideoInfo(extension=".mkv", tags=("hello", "remux", "1080p")),
+        jp.VideoInfo(extension=".mkv", labels=("hello", "remux", "1080p")),
     ),
     (
         # Unknown metadata provider — ignored at video level (only `edition` is captured)

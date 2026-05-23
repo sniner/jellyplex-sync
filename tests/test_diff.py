@@ -119,8 +119,8 @@ def test_diff_does_not_touch_filesystem(tmp_path: Path):
 
 
 def test_diff_reports_translation_drops(tmp_path: Path):
-    """A Plex `[remux]` tag has no equivalent in a Jellyfin label and gets
-    reported as a translation loss in the diff output."""
+    """A Plex `[remux]` label has no equivalent in a Jellyfin version label
+    and gets reported as a translation loss in the diff output."""
     src, dst = tmp_path / "src", tmp_path / "dst"
     src.mkdir()
     dst.mkdir()

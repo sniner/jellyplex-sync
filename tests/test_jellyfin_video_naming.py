@@ -36,7 +36,7 @@ SANE_SAMPLES = [
         jp.VideoInfo(
             extension=".mkv",
             attributes={"edition": "Director's Cut"},
-            tags=("DVD",),
+            labels=("DVD",),
         ),
     ),
     (
@@ -44,7 +44,7 @@ SANE_SAMPLES = [
         jp.VideoInfo(
             extension=".mkv",
             attributes={"edition": "Director's Cut"},
-            tags=("1080p",),
+            labels=("1080p",),
         ),
     ),
     (
@@ -52,7 +52,7 @@ SANE_SAMPLES = [
         jp.VideoInfo(
             extension=".mkv",
             attributes={"edition": "Director's Cut"},
-            tags=("1080p",),
+            labels=("1080p",),
         ),
     ),
 ]
@@ -74,7 +74,7 @@ NOT_RECOMMENDED_SAMPLES = [
         jp.VideoInfo(
             extension=".mkv",
             attributes={"edition": "Director's Cut"},
-            tags=("1080p",),
+            labels=("1080p",),
         ),
     ),
     (
@@ -83,7 +83,7 @@ NOT_RECOMMENDED_SAMPLES = [
         jp.VideoInfo(
             extension=".mkv",
             attributes={"edition": "Director's Cut"},
-            tags=("1080p",),
+            labels=("1080p",),
         ),
     ),
 ]
