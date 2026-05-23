@@ -171,6 +171,14 @@ class JellyfinLibraryWriter(_JellyfinBase):
             shorthand = _CANONICAL_TO_SHORTHAND.get(label) or _CANONICAL_TO_SHORTHAND.get(
                 label.upper()
             )
+            if shorthand is None and RESOLUTION_PATTERN.match(label):
+                # Off-standard but resolution-shaped (e.g. "570i" from a
+                # non-NTSC film transfer). Pass through verbatim — better
+                # a slightly off label than silently lost user data.
+                # Jellyfin's resolution-sort triggers on the trailing
+                # `p`/`i` anyway, so the file still sorts in the right
+                # bucket.
+                shorthand = label
             if shorthand is None:
                 reporter.drop(
                     Drop(

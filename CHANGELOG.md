@@ -13,6 +13,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   DEBUG by default and to INFO with `--verbose`. The text summary still shows aggregate
   counts; the JSON output still carries the deduplicated `translation_losses` list and the
   full per-file events
+- **Off-standard resolution labels are preserved instead of dropped** — labels matching the
+  resolution shape (`\d{3,4}[pi]`) but not in the known mapping (e.g. `[570i]` from a
+  non-NTSC film transfer, or `[1440p]`) now pass through verbatim to the Jellyfin
+  version-label position. Previously the label was silently dropped, producing
+  `Movie - TV Fassung.mkv` from a source like `Movie [570i] [edition-TV Fassung].mkv`.
+  Jellyfin's resolution sort still triggers on the trailing `p`/`i`, so sort order stays
+  correct
 
 ## [0.2.0] - 2026-05-23
 

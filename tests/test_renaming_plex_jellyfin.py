@@ -93,6 +93,17 @@ SAMPLES_FILENAME = [
         "First movie (1984) {fancy-stuff} {hello world} [1080p].mkv",
         "First movie (1984) - BD.mkv",
     ),
+    # Off-standard resolution labels (e.g. NTSC film transfers at non-standard
+    # frame sizes) pass through verbatim instead of being dropped. Better a
+    # slightly off label than silent data loss.
+    (
+        "Queimada (1969) {imdb-tt0064866} [570i].mkv",
+        "Queimada (1969) [imdbid-tt0064866] - 570i.mkv",
+    ),
+    (
+        "Custom Source (2024) [1440p].mkv",
+        "Custom Source (2024) - 1440p.mkv",
+    ),
 ]
 
 
