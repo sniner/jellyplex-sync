@@ -21,6 +21,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   Jellyfin's resolution sort still triggers on the trailing `p`/`i`, so sort order stays
   correct
 
+### Added
+- **Movie-level clashes are surfaced in summary and JSON** — when two source files in the
+  same movie folder collapse to the same target name (common with the lossy P→J
+  translation: `[1080p].mkv` and `[1080p] [remux].mkv` both become `- BD.mkv`), the whole
+  movie has always been skipped silently apart from one ERROR log line. Easy to miss in a
+  691-movie library. Now: counted as `N skipped due to clash` in the summary line, listed
+  under top-level `clashes` in JSON (with movie folder + target filename + source file
+  names so you can rename and re-run), and a closing WARNING points the user at the
+  remediation. Behavior unchanged — the movie is still skipped wholesale. New `MovieClash`
+  type in the public API; `LibraryStats.clashes`, `MovieStats.clash` fields
+
 ## [0.2.0] - 2026-05-23
 
 ### Breaking changes

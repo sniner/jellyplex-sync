@@ -16,6 +16,7 @@ from .library import (
     LibraryReader,
     LibraryWriter,
     LoggingReporter,
+    MovieClash,
     Reporter,
     dedupe_drops,
     movie_path,
@@ -53,6 +54,7 @@ class LibraryStats:
     ignored: list[IgnoredEntry] = field(default_factory=list)
     strays_in_target: list[str] = field(default_factory=list)
     events: list[FileEvent] = field(default_factory=list)
+    clashes: list[MovieClash] = field(default_factory=list)
 
 
 def scan_media_library(
@@ -199,6 +201,7 @@ class MovieStats:
     loose_files_total: int = 0
     loose_files_linked: int = 0
     events: list[FileEvent] = field(default_factory=list)
+    clash: MovieClash | None = None
 
 
 def _ensure_dir(path: pathlib.Path, *, dry_run: bool) -> None:
@@ -252,7 +255,7 @@ def process_movie(
     verbose: bool = False,
 ) -> MovieStats:
     materializer = materializer or HardlinkMaterializer()
-    reporter = reporter or LoggingReporter()
+    reporter = reporter or LoggingReporter(verbose=verbose)
     target_path = movie_path(target, movie, reporter)
 
     if verbose:
@@ -274,8 +277,22 @@ def process_movie(
             video = source.parse_video(entry)
             dst_video_path = video_path(target, movie, video, reporter)
             if dst_video_path.name in videos_to_sync:
-                log.error("Conflicting video file '%s'. Aborting.", entry.name)
-                return MovieStats()
+                other_entry, _ = videos_to_sync[dst_video_path.name]
+                log.error(
+                    "Conflicting video files '%s' and '%s' in movie '%s' "
+                    "both target '%s' — skipping movie.",
+                    other_entry.name,
+                    entry.name,
+                    source_path.name,
+                    dst_video_path.name,
+                )
+                return MovieStats(
+                    clash=MovieClash(
+                        movie_folder=source_path.name,
+                        target_filename=dst_video_path.name,
+                        source_filenames=(other_entry.name, entry.name),
+                    )
+                )
             videos_to_sync[dst_video_path.name] = (entry, dst_video_path)
             stats.videos_total += 1
         elif entry.is_file():
@@ -413,7 +430,7 @@ def sync(
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    reporter = reporter or LoggingReporter()
+    reporter = reporter or LoggingReporter(verbose=verbose)
     materializer = materializer or HardlinkMaterializer()
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
@@ -476,6 +493,8 @@ def sync(
         lib_stats.items_linked += s.asset_items_linked + s.videos_linked + s.loose_files_linked
         lib_stats.movie_items_removed += s.asset_items_removed + s.items_removed
         lib_stats.events.extend(s.events)
+        if s.clash is not None:
+            lib_stats.clashes.append(s.clash)
 
     total_removed = lib_stats.items_removed + lib_stats.movie_items_removed
     ignored_count = len(lib_stats.ignored)
@@ -489,7 +508,8 @@ def sync(
         f"{lib_stats.items_linked} files updated, "
         f"{total_removed} files removed, "
         f"{ignored_count} ignored, "
-        f"{strays_kept} strays kept in target."
+        f"{strays_kept} strays kept in target, "
+        f"{len(lib_stats.clashes)} skipped due to clash."
     )
     log.info(summary)
 
@@ -503,6 +523,14 @@ def sync(
             "%d item(s) in target are not in the source library. "
             "Pass --delete to remove them (target then becomes a clean mirror).",
             strays_kept,
+        )
+
+    if lib_stats.clashes:
+        log.warning(
+            "%d movie(s) skipped because two or more source files map to the "
+            "same target name (lossy P→J translation collapsed disambiguating "
+            "labels). Rename one side and re-run.",
+            len(lib_stats.clashes),
         )
 
     return 0

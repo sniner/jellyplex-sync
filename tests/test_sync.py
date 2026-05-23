@@ -366,6 +366,39 @@ def test_process_movie_syncs_loose_top_level_files(tmp_path: Path) -> None:
     assert stats.loose_files_linked == 4
 
 
+def test_process_movie_records_clash_when_two_videos_collide(tmp_path: Path) -> None:
+    """Two source files that produce the same target name should be
+    recorded as a MovieClash and the whole movie skipped (no link).
+    Common in P→J: `[1080p].mkv` and `[1080p] [remux].mkv` both
+    collapse to `- BD.mkv`."""
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    movie_dir = src / "Movie (2020) {imdb-tt1}"
+    movie_dir.mkdir()
+    _touch(movie_dir / "Movie (2020) {imdb-tt1} [1080p].mkv", b"v1")
+    _touch(movie_dir / "Movie (2020) {imdb-tt1} [1080p] [remux].mkv", b"v2")
+
+    source = jp.PlexLibraryReader(src)
+    target = jp.JellyfinLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
+    assert movie is not None
+
+    stats = process_movie(source, target, movie_dir, movie)
+
+    assert stats.clash is not None
+    assert stats.clash.movie_folder == "Movie (2020) {imdb-tt1}"
+    assert stats.clash.target_filename == "Movie (2020) [imdbid-tt1] - BD.mkv"
+    assert set(stats.clash.source_filenames) == {
+        "Movie (2020) {imdb-tt1} [1080p].mkv",
+        "Movie (2020) {imdb-tt1} [1080p] [remux].mkv",
+    }
+    # Nothing actually got linked
+    assert stats.videos_linked == 0
+    assert not (dst / "Movie (2020) [imdbid-tt1]").exists()
+
+
 def test_process_movie_records_movie_stray_remove_events(tmp_path: Path) -> None:
     """Strays inside a movie folder produce remove events with
     context='movie_stray' — distinct from library-level strays."""

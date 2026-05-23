@@ -166,6 +166,21 @@ class IgnoredEntry:
 
 
 @dataclass
+class MovieClash:
+    """Two or more source files in the same movie folder produce the
+    same target video filename — usually because the lossy P→J
+    translation drops disambiguating labels (e.g. `[1080p].mkv` and
+    `[1080p] [remux].mkv` both collapse to `- BD.mkv`). The movie is
+    skipped wholesale (no file gets linked) since we can't pick a
+    winner. Surface this in the summary and JSON so the user can rename
+    one side and re-run."""
+
+    movie_folder: str
+    target_filename: str
+    source_filenames: tuple[str, ...]
+
+
+@dataclass
 class FileEvent:
     """A per-file action recorded during sync — the granular companion to
     the aggregate counters in LibraryStats.

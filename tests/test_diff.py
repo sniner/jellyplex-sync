@@ -1,8 +1,6 @@
 import io
 from pathlib import Path
 
-import pytest
-
 import jellyplex_sync as jp
 from jellyplex_sync.sync import diff
 

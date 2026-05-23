@@ -16,7 +16,7 @@ import json
 import pathlib
 from typing import TYPE_CHECKING, Any, TextIO
 
-from .library import Drop, FileEvent, IgnoredEntry, dedupe_drops
+from .library import Drop, FileEvent, IgnoredEntry, MovieClash, dedupe_drops
 
 if TYPE_CHECKING:
     from .sync import DiffResult, LibraryStats
@@ -37,6 +37,17 @@ def _drops_payload(drops: tuple[Drop, ...] | list[Drop]) -> list[dict[str, Any]]
     return [
         {"kind": d.kind, "key": d.key, "value": d.value, "reason": d.reason}
         for d in dedupe_drops(list(drops))
+    ]
+
+
+def _clashes_payload(clashes: list[MovieClash]) -> list[dict[str, Any]]:
+    return [
+        {
+            "movie_folder": c.movie_folder,
+            "target_filename": c.target_filename,
+            "source_filenames": list(c.source_filenames),
+        }
+        for c in clashes
     ]
 
 
@@ -79,10 +90,12 @@ def write_sync_json(
             "files_removed": stats.items_removed + stats.movie_items_removed,
             "items_ignored": len(stats.ignored),
             "strays_in_target": len(stats.strays_in_target),
+            "clashes": len(stats.clashes),
         },
         "ignored": _ignored_payload(stats.ignored),
         "strays_in_target": list(stats.strays_in_target),
         "translation_losses": _drops_payload(drops),
+        "clashes": _clashes_payload(stats.clashes),
         "events": _events_payload(stats.events),
     }
     json.dump(payload, out, indent=2)

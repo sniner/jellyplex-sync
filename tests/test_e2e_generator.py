@@ -14,9 +14,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-import jellyplex_sync as jp
-from jellyplex_sync.sync import guess_library_type
 from jellyplex_gen import (
     CuratedTitleSource,
     FlatLibraryStructure,
@@ -25,6 +22,9 @@ from jellyplex_gen import (
     build_manifest,
     materialize,
 )
+
+import jellyplex_sync as jp
+from jellyplex_sync.sync import guess_library_type
 
 
 def _generate_plex_lib(root: Path, seed: str = "e2e-001", movies: int = 6) -> Manifest:
