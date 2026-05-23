@@ -598,9 +598,7 @@ def _compute_diff(source: LibraryReader, target: LibraryWriter) -> DiffResult:
             if entry.is_file() and entry.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
                 video = source.parse_video(entry)
                 expected_files.add(target.video_name(movie, video, reporter))
-            elif entry.is_file():
-                expected_files.add(entry.name)
-            elif entry.is_dir():
+            elif entry.is_file() or entry.is_dir():
                 expected_files.add(entry.name)
         expected[target_movie_name] = expected_files
 
