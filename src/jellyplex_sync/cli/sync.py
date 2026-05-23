@@ -89,18 +89,26 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _add_io_args(p: argparse.ArgumentParser) -> None:
+    format_choices = [
+        jp.JellyfinLibraryReader.shortname(),
+        jp.PlexLibraryReader.shortname(),
+        "auto",
+    ]
     p.add_argument("source", help="Source media library path.")
     p.add_argument("target", help="Target media library path.")
     p.add_argument(
-        "--convert-to",
+        "--source-format",
         type=str,
-        choices=[
-            jp.JellyfinLibraryReader.shortname(),
-            jp.PlexLibraryReader.shortname(),
-            "auto",
-        ],
+        choices=format_choices,
         default="auto",
-        help="Target format ('auto' tries to detect from the source).",
+        help="Source library format ('auto' detects from the source layout).",
+    )
+    p.add_argument(
+        "--target-format",
+        type=str,
+        choices=format_choices,
+        default="auto",
+        help="Target library format ('auto' picks the opposite of the source).",
     )
 
 
@@ -150,7 +158,8 @@ def _do_sync(args: argparse.Namespace) -> int:
             create=args.create,
             verbose=args.verbose,
             debug=args.debug,
-            convert_to=args.convert_to,
+            source_format=args.source_format,
+            target_format=args.target_format,
             materializer=materializer,
         )
     except KeyboardInterrupt:
@@ -179,7 +188,8 @@ def _do_diff(args: argparse.Namespace) -> int:
             args.source,
             args.target,
             debug=args.debug,
-            convert_to=args.convert_to,
+            source_format=args.source_format,
+            target_format=args.target_format,
         )
     except KeyboardInterrupt:
         logging.info("INTERRUPTED")

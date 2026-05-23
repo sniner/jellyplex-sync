@@ -321,26 +321,42 @@ def guess_library_type(path: pathlib.Path) -> type[LibraryReader] | None:
     return None
 
 
+def _opposite(short: str) -> str:
+    return "plex" if short == "jellyfin" else "jellyfin"
+
+
 def _resolve_formats(
-    source_path: pathlib.Path, convert_to: str | None
+    source_path: pathlib.Path,
+    source_format: str | None,
+    target_format: str | None,
 ) -> tuple[str, str] | None:
-    """Pick source and target shortnames from --convert-to or by sniffing.
-    Returns None and logs an error if the source format can't be determined."""
-    if not convert_to or convert_to == "auto":
+    """Pick source and target shortnames from --source-format/--target-format.
+
+    Either side may be "auto" (or None): the source is then sniffed from disk,
+    and the target defaults to the opposite of the source. Both sides explicit
+    with the same value is the lint/normalize mode. Returns None and logs an
+    error if a needed format can't be determined.
+    """
+    src = source_format if source_format and source_format != "auto" else None
+    tgt = target_format if target_format and target_format != "auto" else None
+
+    for label, value in (("source_format", src), ("target_format", tgt)):
+        if value is not None and value not in _LIBRARY_TYPES:
+            raise ValueError(f"Unknown value for parameter {label!r}: {value!r}")
+
+    if src is None:
         source_type = guess_library_type(source_path)
         if not source_type:
             log.error(
-                "Unable to determine source library type, please provide --convert-to option"
+                "Unable to determine source library type, please provide --source-format"
             )
             return None
-        source_short = source_type.shortname()
-        target_short = "plex" if source_short == "jellyfin" else "jellyfin"
-        return source_short, target_short
-    if convert_to in _LIBRARY_TYPES:
-        target_short = convert_to
-        source_short = "plex" if target_short == "jellyfin" else "jellyfin"
-        return source_short, target_short
-    raise ValueError("Unknown value for parameter 'convert_to'")
+        src = source_type.shortname()
+
+    if tgt is None:
+        tgt = _opposite(src)
+
+    return src, tgt
 
 
 def sync(
@@ -352,7 +368,8 @@ def sync(
     create: bool = False,
     verbose: bool = False,
     debug: bool = False,
-    convert_to: str | None = None,
+    source_format: str | None = None,
+    target_format: str | None = None,
     reporter: Reporter | None = None,
     materializer: FileMaterializer | None = None,
 ) -> int:
@@ -364,7 +381,7 @@ def sync(
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
 
-    resolved = _resolve_formats(source_path, convert_to)
+    resolved = _resolve_formats(source_path, source_format, target_format)
     if resolved is None:
         return 1
     source_short, target_short = resolved
@@ -471,7 +488,8 @@ def diff(
     target: str,
     *,
     debug: bool = False,
-    convert_to: str | None = None,
+    source_format: str | None = None,
+    target_format: str | None = None,
     out=None,
 ) -> int:
     """Compare a source library against an existing target library.
@@ -489,7 +507,7 @@ def diff(
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
 
-    resolved = _resolve_formats(source_path, convert_to)
+    resolved = _resolve_formats(source_path, source_format, target_format)
     if resolved is None:
         return 2
     source_short, target_short = resolved

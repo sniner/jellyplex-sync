@@ -144,14 +144,21 @@ def test_diff_reports_translation_drops(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-def test_diff_honors_convert_to_override(tmp_path: Path):
-    """If the source contains Plex-format movies, asking diff to convert to
-    Plex (no-op) should detect that the target is also empty/mismatched."""
+def test_diff_honors_format_override(tmp_path: Path):
+    """If the source contains Plex-format movies, asking diff to keep the
+    target as Plex (lint/no-op) should detect that the target is also
+    empty/mismatched."""
     src, dst = tmp_path / "src", tmp_path / "dst"
     _seed_source(src, ["First (1984) {imdb-tt001}"])
     dst.mkdir()
 
     buf = io.StringIO()
-    rc = diff(str(src), str(dst), convert_to="plex", out=buf)
+    rc = diff(
+        str(src),
+        str(dst),
+        source_format="plex",
+        target_format="plex",
+        out=buf,
+    )
     # Plex → Plex still expects the movie to exist in target.
     assert rc == 1

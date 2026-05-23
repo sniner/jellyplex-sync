@@ -57,7 +57,8 @@ The first positional argument is the source library, the second is the target. B
 - `--dry-run` — show what would happen without touching the filesystem.
 - `--verbose` — log every processed movie.
 - `--debug` — enable debug-level logging.
-- `--convert-to {jellyfin,plex,auto}` — force conversion direction. `auto` (default) inspects the source library and picks the appropriate target format.
+- `--source-format {jellyfin,plex,auto}` — declare the source library format. `auto` (default) inspects the source layout.
+- `--target-format {jellyfin,plex,auto}` — declare the target library format. `auto` (default) picks the opposite of the source. Setting both flags to the same value puts the tool into lint/normalize mode (rewrite a library in its own format, e.g. to canonicalize tags).
 
 #### Examples
 
