@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import pathlib
 import re
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 
 from . import utils
@@ -29,7 +29,15 @@ from .plex import PlexLibraryReader, PlexLibraryWriter
 log = logging.getLogger(__name__)
 
 
-_LIBRARY_TYPES: dict[str, tuple[type[LibraryReader], type[LibraryWriter]]] = {
+# Factory pair per shortname. Typed as Callable rather than `type[Protocol]`
+# because Protocol classes don't declare __init__, and pyright treats
+# `type[LibraryReader](path)` as a zero-arg call. The factory shape is
+# what we actually need at the call site: hand it a base_dir, get a
+# Reader / Writer back.
+_ReaderFactory = Callable[[pathlib.Path], LibraryReader]
+_WriterFactory = Callable[[pathlib.Path], LibraryWriter]
+
+_LIBRARY_TYPES: dict[str, tuple[_ReaderFactory, _WriterFactory]] = {
     PlexLibraryReader.shortname(): (PlexLibraryReader, PlexLibraryWriter),
     JellyfinLibraryReader.shortname(): (JellyfinLibraryReader, JellyfinLibraryWriter),
 }
