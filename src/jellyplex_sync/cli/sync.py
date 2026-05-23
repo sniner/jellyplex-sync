@@ -30,6 +30,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show debug messages.",
     )
+    common.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a machine-readable JSON document on stdout. Logs continue to go to stderr.",
+    )
 
     sub = parser.add_subparsers(dest="command", required=True, metavar="<command>")
 
@@ -148,9 +153,16 @@ def main() -> None:
 
 
 def _do_sync(args: argparse.Namespace) -> int:
+    import pathlib
+
+    from jellyplex_sync.library import CollectingReporter
+    from jellyplex_sync.sync import LibraryStats
+
     materializer = _make_materializer(args.mode)
+    stats = LibraryStats() if args.json else None
+    reporter = CollectingReporter() if args.json else None
     try:
-        return jp.sync(
+        rc = jp.sync(
             args.source,
             args.target,
             dry_run=args.dry_run,
@@ -161,6 +173,8 @@ def _do_sync(args: argparse.Namespace) -> int:
             source_format=args.source_format,
             target_format=args.target_format,
             materializer=materializer,
+            reporter=reporter,
+            stats=stats,
         )
     except KeyboardInterrupt:
         logging.info("INTERRUPTED")
@@ -168,6 +182,24 @@ def _do_sync(args: argparse.Namespace) -> int:
     except Exception as exc:
         logging.error("Exception: %s", exc)
         return 99
+
+    if args.json:
+        assert stats is not None and reporter is not None
+        source_short, target_short = _resolve_formats_for_json(args)
+        from jellyplex_sync.json_output import write_sync_json
+
+        write_sync_json(
+            sys.stdout,
+            source_path=pathlib.Path(args.source),
+            source_format=source_short,
+            target_path=pathlib.Path(args.target),
+            target_format=target_short,
+            dry_run=args.dry_run,
+            exit_code=rc,
+            stats=stats,
+            drops=reporter.drops,
+        )
+    return rc
 
 
 def _make_materializer(mode: str) -> jp.FileMaterializer:
@@ -190,6 +222,7 @@ def _do_diff(args: argparse.Namespace) -> int:
             debug=args.debug,
             source_format=args.source_format,
             target_format=args.target_format,
+            as_json=args.json,
         )
     except KeyboardInterrupt:
         logging.info("INTERRUPTED")
@@ -197,6 +230,21 @@ def _do_diff(args: argparse.Namespace) -> int:
     except Exception as exc:
         logging.error("Exception: %s", exc)
         return 99
+
+
+def _resolve_formats_for_json(args: argparse.Namespace) -> tuple[str, str]:
+    """Re-run the same format resolution `sync()` did so the JSON payload
+    reports the formats that were actually used. Returns ('?', '?') if
+    resolution fails — sync() will already have logged the error and the
+    caller's exit code reflects it."""
+    import pathlib
+
+    from jellyplex_sync.sync import _resolve_formats
+
+    resolved = _resolve_formats(
+        pathlib.Path(args.source), args.source_format, args.target_format
+    )
+    return resolved if resolved else ("?", "?")
 
 
 if __name__ == "__main__":

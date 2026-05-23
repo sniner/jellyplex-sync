@@ -38,6 +38,8 @@ class LibraryStats:
     movies_total: int = 0
     movies_processed: int = 0
     items_removed: int = 0
+    items_linked: int = 0
+    movie_items_removed: int = 0
     ignored: list[IgnoredEntry] = field(default_factory=list)
 
 
@@ -374,6 +376,7 @@ def sync(
     target_format: str | None = None,
     reporter: Reporter | None = None,
     materializer: FileMaterializer | None = None,
+    stats: LibraryStats | None = None,
 ) -> int:
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -417,9 +420,7 @@ def sync(
             log.error("Target directory '%s' does not exist", target_writer.base_dir)
             return 1
 
-    lib_stats = LibraryStats()
-    items_linked = 0
-    items_removed = 0
+    lib_stats = stats if stats is not None else LibraryStats()
 
     for src, _, movie in scan_media_library(
         source_reader,
@@ -440,15 +441,15 @@ def sync(
             verbose=verbose,
             dry_run=dry_run,
         )
-        items_linked += s.asset_items_linked + s.videos_linked + s.loose_files_linked
-        items_removed += s.asset_items_removed + s.items_removed
+        lib_stats.items_linked += s.asset_items_linked + s.videos_linked + s.loose_files_linked
+        lib_stats.movie_items_removed += s.asset_items_removed + s.items_removed
 
-    items_removed += lib_stats.items_removed
+    total_removed = lib_stats.items_removed + lib_stats.movie_items_removed
 
     summary = (
         f"Summary: {lib_stats.movies_processed} of {lib_stats.movies_total} movies synced, "
-        f"{items_linked} files updated, "
-        f"{items_removed} files removed."
+        f"{lib_stats.items_linked} files updated, "
+        f"{total_removed} files removed."
     )
     log.info(summary)
 
@@ -502,12 +503,14 @@ def diff(
     source_format: str | None = None,
     target_format: str | None = None,
     out=None,
+    as_json: bool = False,
 ) -> int:
     """Compare a source library against an existing target library.
 
     Read-only: never touches the filesystem. Exit codes follow the Unix
     `diff` convention — 0 if no differences, 1 if differences are found,
-    2 if there's a setup error.
+    2 if there's a setup error. With `as_json=True`, emits the machine-
+    readable JSON document instead of the human-readable text report.
     """
     import sys
 
@@ -536,7 +539,12 @@ def diff(
         return 2
 
     result = _compute_diff(source_reader, target_writer)
-    _print_diff(result, source_short, target_short, source_path, target_path, out)
+    if as_json:
+        from .json_output import write_diff_json
+
+        write_diff_json(out, result, source_short, target_short, source_path, target_path)
+    else:
+        _print_diff(result, source_short, target_short, source_path, target_path, out)
     return 1 if result.has_differences else 0
 
 

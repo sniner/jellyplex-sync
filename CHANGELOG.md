@@ -51,6 +51,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `diff` output. Before, these were silently warning-logged at most and could vanish unnoticed
   when a user deleted the source after migration. New `IgnoredEntry` type in the public API,
   populated on `LibraryStats.ignored` and `DiffResult.ignored`
+- **`--json` flag** — machine-readable output for both `sync` and `diff`, written to stdout
+  while logs continue to go to stderr. Schema is defined in `jellyplex_sync/json_output.py`
+  and includes operation type, source/target endpoints with format, summary counters,
+  ignored entries, and translation losses. Subject to change until the schema is declared
+  stable, but already useful for scripting. Public API: `diff(..., as_json=True)` writes
+  the JSON document to `out`; `sync()` gained a `stats=` parameter so callers can read
+  aggregate counters (`items_linked`, `movies_processed`, `ignored`) without re-walking
+  per-movie `MovieStats`
 
 ## [0.1.6] - 2026-05-21
 
