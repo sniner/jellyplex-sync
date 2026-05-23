@@ -105,6 +105,100 @@ Common mistakes when round-tripping by hand:
 - Plex bracket type is `{}`, Jellyfin is `[]`.
 - TVDB on Jellyfin is shows-only.
 
+## Extras subdirectories
+
+Both systems allow a movie folder to hold subdirectories with bonus
+content — trailers, deleted scenes, featurettes, and the like. The
+recognized subfolder names are similar in spirit but **not the same
+set**, the casing convention differs, and the generic catch-all
+name differs in a way that has bitten us before.
+
+### Plex (Title Case)
+
+From the Plex extras article (see Sources), *"Where `Extra_Directory_Type`
+is one of:"*
+
+- `Behind The Scenes`
+- `Deleted Scenes`
+- `Featurettes`
+- `Interviews`
+- `Scenes`
+- `Shorts`
+- `Trailers`
+- `Other` — the documented generic catch-all
+
+**A literal `Extras` folder is NOT in Plex's recognized list.** Content
+placed in an `Extras/` subdirectory is silently ignored by the Plex
+scanner. For generic bonus content on Plex, use `Other` — or its
+lowercase form `other`, which is empirically accepted as well (see
+"Cross-reference and asymmetries" below).
+
+Plex also supports a parallel mechanism — files placed directly in the
+movie folder with a `-Extra_Type` filename suffix
+(`-behindthescenes`, `-deleted`, `-featurette`, `-interview`, `-scene`,
+`-short`, `-trailer`, `-other`). That is separate from the subfolder
+convention and out of scope here.
+
+### Jellyfin (lowercase)
+
+From the Jellyfin movies docs (the extras section is included from a
+partial — link in Sources), *"Supported folder types are:"*
+
+- `behind the scenes`
+- `deleted scenes`
+- `interviews`
+- `scenes`
+- `samples`
+- `shorts`
+- `featurettes`
+- `clips`
+- `other` — *"Generic catch all for extras of an unknown type."*
+- `extras` — *"Generic catch all for extras of an unknown type."* (identical wording)
+- `trailers`
+- `theme-music`
+- `backdrops`
+
+Both `other` and `extras` are documented as catch-alls with the same
+wording on Jellyfin.
+
+### Cross-reference and asymmetries
+
+| Concept | Plex | Jellyfin |
+|---|---|---|
+| Behind-the-scenes | `Behind The Scenes` | `behind the scenes` |
+| Deleted scenes | `Deleted Scenes` | `deleted scenes` |
+| Featurettes | `Featurettes` | `featurettes` |
+| Interviews | `Interviews` | `interviews` |
+| Scenes | `Scenes` | `scenes` |
+| Shorts | `Shorts` | `shorts` |
+| Trailers | `Trailers` | `trailers` |
+| Generic catch-all | `Other` (docs) / `other` (empirical) | `other` **or** `extras` |
+| Samples | — | `samples` |
+| Clips | — | `clips` |
+| Theme music | — | `theme-music` |
+| Backdrops | — | `backdrops` |
+
+- **The `Extras` footgun goes one way.** A folder literally named
+  `extras` is a Jellyfin catch-all and a Plex no-op. **The portable
+  choice for a generic catch-all is lowercase `other`** — Jellyfin's
+  documented form, and empirically accepted by Plex as well (the
+  Plex docs show `Other` in Title Case, but the scanner accepts
+  `other` in practice; confirmed in production use). When translating
+  Jellyfin → Plex, a Jellyfin `extras/` folder should be remapped to
+  `other`.
+- **Casing is convention, not certainty.** Neither doc page
+  explicitly states case-sensitivity rules. We have empirical
+  evidence that Plex's scanner accepts lowercase `other`, but no
+  data on the other category names (`Behind The Scenes`, etc.).
+  Safest: emit each system's documented casing for the specific
+  categories; lowercase `other` is fine — and preferable — for the
+  catch-all because it survives both scanners with one spelling.
+- **Granularity differs.** Jellyfin's `samples`, `clips`,
+  `theme-music`, `backdrops` have no documented Plex equivalents.
+  Translating Jellyfin → Plex, the safe fallback for all of these
+  is `Other` (lossy — the specific category label is dropped). The
+  Reporter (Paket 1) should emit a `Drop` for the lost category.
+
 ## Asymmetry of translation
 
 The two systems' concept spaces are not isomorphic. Some translations
@@ -327,5 +421,7 @@ covers it (or a TODO for one).
 ## Sources
 
 - Plex: [Naming and organizing your Movie files](https://support.plex.tv/articles/naming-and-organizing-your-movie-media-files/)
+- Plex: [Local Files for Movie Trailers and Extras](https://support.plex.tv/articles/local-files-for-trailers-and-extras/) — extras subfolder names and `-Extra_Type` suffix convention.
 - Jellyfin: [Movies](https://jellyfin.org/docs/general/server/media/movies/)
 - Jellyfin: [Metadata Provider Identifiers](https://jellyfin.org/docs/general/server/metadata/identifiers/)
+- Jellyfin: [`_video-external-extras.md` partial](https://github.com/jellyfin/jellyfin.org/blob/master/docs/general/server/media/_video-external-extras.md) — ground-truth source for the extras subfolder list (the rendered Movies page includes this partial).
