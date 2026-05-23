@@ -9,6 +9,8 @@ sync-everything default) land, these tests are the first to fail if the
 pipeline assembly silently breaks.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import pytest
@@ -18,13 +20,14 @@ from jellyplex_sync.sync import guess_library_type
 from jellyplex_gen import (
     CuratedTitleSource,
     FlatLibraryStructure,
+    Manifest,
     PlexNamingConvention,
     build_manifest,
     materialize,
 )
 
 
-def _generate_plex_lib(root: Path, seed: str = "e2e-001", movies: int = 6) -> jp.MediaLibrary:
+def _generate_plex_lib(root: Path, seed: str = "e2e-001", movies: int = 6) -> Manifest:
     manifest = build_manifest(seed=seed, movie_count=movies, title_source=CuratedTitleSource())
     materialize(
         manifest,

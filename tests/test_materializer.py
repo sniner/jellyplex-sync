@@ -103,14 +103,27 @@ def test_copy_replaces_when_mtime_differs(tmp_path: Path):
 
 
 def test_force_copy_copies_even_when_identical(tmp_path: Path):
+    """ForceCopy must overwrite even when CopyMaterializer would skip
+    (size+mtime match). Verified by content, not inode — ext4 and other
+    filesystems aggressively reuse the inode after unlink+create, so the
+    inode is filesystem-dependent and not a reliable signal."""
     src = _touch(tmp_path / "src.mkv", b"abc")
     dst = tmp_path / "dst.mkv"
     jp.CopyMaterializer().materialize(src, dst)
-    dst_inode_before = dst.stat().st_ino
 
+    # Poison dst: replace content but keep size+mtime matching src so the
+    # CopyMaterializer skip heuristic still kicks in.
+    src_stat = src.stat()
+    dst.write_bytes(b"xyz")
+    os.utime(dst, (src_stat.st_atime, src_stat.st_mtime))
+
+    # Sanity check: CopyMaterializer would falsely skip here.
+    assert jp.CopyMaterializer().materialize(src, dst) is False
+    assert dst.read_bytes() == b"xyz"
+
+    # ForceCopy ignores the skip heuristic and rewrites.
     assert jp.ForceCopyMaterializer().materialize(src, dst) is True
-    # The file got rewritten, so the inode is fresh.
-    assert dst.stat().st_ino != dst_inode_before
+    assert dst.read_bytes() == b"abc"
 
 
 def test_force_copy_creates_independent_file(tmp_path: Path):
