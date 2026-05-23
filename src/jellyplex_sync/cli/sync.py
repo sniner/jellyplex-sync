@@ -136,8 +136,18 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args(_inject_default_subcommand(sys.argv[1:]))
 
+    # Under --json, INFO chatter on stderr distracts from the JSON document
+    # on stdout. Quiet stderr to WARNING by default; --verbose or --debug
+    # explicitly opt back in.
+    if args.debug:
+        level = logging.DEBUG
+    elif args.json and not args.verbose:
+        level = logging.WARNING
+    else:
+        level = logging.INFO
+
     logging.basicConfig(
-        level=logging.INFO,
+        level=level,
         stream=sys.stderr,
         format="%(levelname)s: %(asctime)s -- %(message)s",
     )

@@ -51,14 +51,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `diff` output. Before, these were silently warning-logged at most and could vanish unnoticed
   when a user deleted the source after migration. New `IgnoredEntry` type in the public API,
   populated on `LibraryStats.ignored` and `DiffResult.ignored`
-- **`--json` flag** — machine-readable output for both `sync` and `diff`, written to stdout
-  while logs continue to go to stderr. Schema is defined in `jellyplex_sync/json_output.py`
-  and includes operation type, source/target endpoints with format, summary counters,
-  ignored entries, and translation losses. Subject to change until the schema is declared
-  stable, but already useful for scripting. Public API: `diff(..., as_json=True)` writes
-  the JSON document to `out`; `sync()` gained a `stats=` parameter so callers can read
-  aggregate counters (`items_linked`, `movies_processed`, `ignored`) without re-walking
-  per-movie `MovieStats`
+- **`--json` flag** — machine-readable output for both `sync` and `diff`, written to stdout.
+  Under `--json`, stderr is quiet (WARNING level), so the document pipes cleanly into `jq`
+  without filtering; pass `--verbose` or `--debug` to re-enable INFO/DEBUG logs alongside
+  the JSON. Schema is defined in `jellyplex_sync/json_output.py` and includes operation
+  type, source/target endpoints with format, summary counters (including `items_ignored`),
+  ignored entries, and translation losses. Schema isn't declared stable yet — pin a version
+  when consuming. Public API: `diff(..., as_json=True)` writes the JSON document to `out`;
+  `sync()` gained a `stats=` parameter so callers can read aggregate counters
+  (`items_linked`, `movies_processed`, `ignored`) without re-walking per-movie `MovieStats`
+- **Ignored count is part of the sync summary line** — the text summary now reports
+  `N ignored` next to the existing counters, so a glance at the last line tells the full
+  story. The per-item list still appears below for context
 
 ## [0.1.6] - 2026-05-21
 

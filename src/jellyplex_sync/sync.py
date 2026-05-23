@@ -445,19 +445,18 @@ def sync(
         lib_stats.movie_items_removed += s.asset_items_removed + s.items_removed
 
     total_removed = lib_stats.items_removed + lib_stats.movie_items_removed
+    ignored_count = len(lib_stats.ignored)
 
     summary = (
         f"Summary: {lib_stats.movies_processed} of {lib_stats.movies_total} movies synced, "
         f"{lib_stats.items_linked} files updated, "
-        f"{total_removed} files removed."
+        f"{total_removed} files removed, "
+        f"{ignored_count} ignored."
     )
     log.info(summary)
 
     if lib_stats.ignored:
-        log.info(
-            "Ignored %d root-level item(s) — these are NOT in the target:",
-            len(lib_stats.ignored),
-        )
+        log.info("Ignored root-level item(s) — these are NOT in the target:")
         for item in lib_stats.ignored:
             log.info("  '%s' (%s)", item.path.name, item.reason)
 

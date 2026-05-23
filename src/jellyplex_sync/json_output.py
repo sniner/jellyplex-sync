@@ -60,6 +60,7 @@ def write_sync_json(
             "movies_processed": stats.movies_processed,
             "files_updated": stats.items_linked,
             "files_removed": stats.items_removed + stats.movie_items_removed,
+            "items_ignored": len(stats.ignored),
         },
         "ignored": _ignored_payload(stats.ignored),
         "translation_losses": _drops_payload(drops),
