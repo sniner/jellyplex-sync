@@ -153,6 +153,27 @@ def test_scan_media_library_records_strays_with_delete(tmp_path: Path) -> None:
     assert not stray.exists()
 
 
+def test_scan_media_library_records_library_stray_remove_events(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    (src / "First (1984) [imdbid-tt001]").mkdir()
+    (dst / "Stray (1990) {imdb-tt999}").mkdir()
+
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    stats = LibraryStats()
+
+    list(scan_media_library(source, target, delete=True, stats=stats))
+
+    remove_events = [e for e in stats.events if e.action == "remove"]
+    assert len(remove_events) == 1
+    assert remove_events[0].context == "library_stray"
+    assert remove_events[0].target.name == "Stray (1990) {imdb-tt999}"
+    assert remove_events[0].source is None
+
+
 def test_scan_media_library_collects_ignored_entries(tmp_path: Path) -> None:
     """Stray files at the library root and unparseable folder names land in
     LibraryStats.ignored so the sync summary can surface them — important
@@ -343,6 +364,55 @@ def test_process_movie_syncs_loose_top_level_files(tmp_path: Path) -> None:
 
     assert stats.loose_files_total == 4
     assert stats.loose_files_linked == 4
+
+
+def test_process_movie_records_movie_stray_remove_events(tmp_path: Path) -> None:
+    """Strays inside a movie folder produce remove events with
+    context='movie_stray' — distinct from library-level strays."""
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    movie_dir = src / "First (1984) [imdbid-tt001]"
+    movie_dir.mkdir()
+    _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"v")
+    target_movie = dst / "First (1984) {imdb-tt001}"
+    target_movie.mkdir()
+    _touch(target_movie / "stale-inside-movie.txt", b"old")
+
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
+    assert movie is not None
+
+    stats = process_movie(source, target, movie_dir, movie, delete=True)
+
+    remove_events = [e for e in stats.events if e.action == "remove"]
+    assert len(remove_events) == 1
+    assert remove_events[0].context == "movie_stray"
+    assert remove_events[0].target.name == "stale-inside-movie.txt"
+
+
+def test_process_movie_records_link_events_for_videos(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    movie_dir = src / "First (1984) [imdbid-tt001]"
+    movie_dir.mkdir()
+    _touch(movie_dir / "First (1984) [imdbid-tt001].mkv", b"v")
+
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    movie = source.parse_movie(movie_dir)
+    assert movie is not None
+
+    stats = process_movie(source, target, movie_dir, movie)
+
+    link_events = [e for e in stats.events if e.action == "link"]
+    assert len(link_events) == 1
+    assert link_events[0].source is not None
+    assert link_events[0].source.name == "First (1984) [imdbid-tt001].mkv"
 
 
 def test_process_movie_removes_stray_with_delete(tmp_path: Path) -> None:

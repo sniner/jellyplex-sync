@@ -70,6 +70,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   list under top-level `strays_in_target` in JSON. When strays exist and `--delete` was not
   passed, the run ends with a warning that points at `--delete`. New
   `LibraryStats.strays_in_target` field
+- **Per-file `events` in `--json` output** — `sync --json` now emits a flat top-level `events`
+  array with one entry per file action: `{action, target, source?, context?}`. Actions are
+  `link`, `replace`, `skip`, `remove`; the run-level `dry_run` flag distinguishes "did" from
+  "would" (so jq filters stay portable between modes). `context` on removes is
+  `library_stray` / `movie_stray` / `asset_stray` — tells you which scope a deletion came
+  from. Enables external verification scripts (e.g. "show me all replaces with full paths")
+  without parsing the text log. New `FileEvent` type in the public API;
+  `LibraryStats.events`, `MovieStats.events`, `AssetStats.events` accumulate them.
+  `FileMaterializer.materialize()` gained an `events: list[FileEvent] | None = None`
+  parameter — backward compatible
 
 ## [0.1.6] - 2026-05-21
 

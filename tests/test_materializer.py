@@ -135,3 +135,67 @@ def test_dry_run_touches_nothing(tmp_path: Path, mat):
     dst = tmp_path / "dst.mkv"
     mat.materialize(src, dst, dry_run=True)
     assert not dst.exists()
+
+
+# ---------------------------------------------------------------------------
+# FileEvent recording (events sink)
+# ---------------------------------------------------------------------------
+
+
+def test_hardlink_records_link_event(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+    events: list[jp.FileEvent] = []
+
+    jp.HardlinkMaterializer().materialize(src, dst, events=events)
+
+    assert len(events) == 1
+    assert events[0].action == "link"
+    assert events[0].source == src
+    assert events[0].target == dst
+
+
+def test_hardlink_records_replace_event(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = _touch(tmp_path / "dst.mkv", b"unrelated")
+    events: list[jp.FileEvent] = []
+
+    jp.HardlinkMaterializer().materialize(src, dst, events=events)
+
+    assert events[0].action == "replace"
+
+
+def test_hardlink_records_skip_event(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+    dst.hardlink_to(src)
+    events: list[jp.FileEvent] = []
+
+    jp.HardlinkMaterializer().materialize(src, dst, events=events)
+
+    assert events[0].action == "skip"
+
+
+def test_copy_records_skip_event_on_match(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+    mat = jp.CopyMaterializer()
+    mat.materialize(src, dst)  # first copy
+
+    events: list[jp.FileEvent] = []
+    mat.materialize(src, dst, events=events)
+
+    assert events[0].action == "skip"
+
+
+def test_events_recorded_in_dry_run_too(tmp_path: Path):
+    """Dry-run still records the intended action — that's the whole point
+    of consuming events from --dry-run --json."""
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+    events: list[jp.FileEvent] = []
+
+    jp.HardlinkMaterializer().materialize(src, dst, dry_run=True, events=events)
+
+    assert events[0].action == "link"
+    assert not dst.exists()  # nothing actually happened

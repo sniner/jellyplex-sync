@@ -137,6 +137,26 @@ class IgnoredEntry:
     reason: str
 
 
+@dataclass
+class FileEvent:
+    """A per-file action recorded during sync — the granular companion to
+    the aggregate counters in LibraryStats.
+
+    `action` is the verb regardless of dry-run vs real-run; the run-level
+    `dry_run` flag distinguishes "did" from "would". This keeps jq filters
+    portable between the two modes.
+
+    `source` is None for `remove` (no source — the file is being deleted).
+    `context` is set only for `remove` to say which scope the stray came
+    from: "library_stray" | "movie_stray" | "asset_stray".
+    """
+
+    action: str  # "link" | "replace" | "skip" | "remove"
+    target: pathlib.Path
+    source: pathlib.Path | None = None
+    context: str | None = None
+
+
 def scan(
     reader: LibraryReader,
     ignored: list[IgnoredEntry] | None = None,

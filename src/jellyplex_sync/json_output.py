@@ -16,7 +16,7 @@ import json
 import pathlib
 from typing import TYPE_CHECKING, Any, TextIO
 
-from .library import Drop, IgnoredEntry
+from .library import Drop, FileEvent, IgnoredEntry
 
 if TYPE_CHECKING:
     from .sync import DiffResult, LibraryStats
@@ -35,6 +35,20 @@ def _drops_payload(drops: tuple[Drop, ...] | list[Drop]) -> list[dict[str, Any]]
         {"kind": d.kind, "key": d.key, "value": d.value, "reason": d.reason}
         for d in drops
     ]
+
+
+def _events_payload(events: list[FileEvent]) -> list[dict[str, Any]]:
+    """Flatten FileEvents into JSON dicts. `source` and `context` are
+    omitted when None — keeps the document compact and unambiguous."""
+    payload: list[dict[str, Any]] = []
+    for ev in events:
+        item: dict[str, Any] = {"action": ev.action, "target": str(ev.target)}
+        if ev.source is not None:
+            item["source"] = str(ev.source)
+        if ev.context is not None:
+            item["context"] = ev.context
+        payload.append(item)
+    return payload
 
 
 def write_sync_json(
@@ -66,6 +80,7 @@ def write_sync_json(
         "ignored": _ignored_payload(stats.ignored),
         "strays_in_target": list(stats.strays_in_target),
         "translation_losses": _drops_payload(drops),
+        "events": _events_payload(stats.events),
     }
     json.dump(payload, out, indent=2)
     out.write("\n")

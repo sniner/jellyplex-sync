@@ -11,6 +11,7 @@ from .jellyfin import JellyfinLibraryReader, JellyfinLibraryWriter
 from .library import (
     ACCEPTED_VIDEO_SUFFIXES,
     CollectingReporter,
+    FileEvent,
     IgnoredEntry,
     LibraryReader,
     LibraryWriter,
@@ -42,6 +43,7 @@ class LibraryStats:
     movie_items_removed: int = 0
     ignored: list[IgnoredEntry] = field(default_factory=list)
     strays_in_target: list[str] = field(default_factory=list)
+    events: list[FileEvent] = field(default_factory=list)
 
 
 def scan_media_library(
@@ -100,6 +102,9 @@ def scan_media_library(
                     log.info("Removing stray item '%s' in target library", entry.name)
                     utils.remove(entry)
                 stats.items_removed += 1
+                stats.events.append(
+                    FileEvent(action="remove", target=entry, context="library_stray")
+                )
             else:
                 if not dry_run:
                     log.info("Stray item '%s' found", entry.name)
@@ -110,6 +115,7 @@ class AssetStats:
     files_total: int = 0
     files_linked: int = 0
     items_removed: int = 0
+    events: list[FileEvent] = field(default_factory=list)
 
 
 def process_assets_folder(
@@ -143,12 +149,15 @@ def process_assets_folder(
                 entry,
                 dest,
                 materializer=materializer,
+                delete=delete,
                 verbose=verbose,
                 stats=stats,
                 dry_run=dry_run,
             )
         elif entry.is_file():
-            if materializer.materialize(entry, dest, dry_run=dry_run, verbose=verbose):
+            if materializer.materialize(
+                entry, dest, dry_run=dry_run, verbose=verbose, events=stats.events,
+            ):
                 stats.files_linked += 1
             stats.files_total += 1
         synced_items[entry.name] = dest
@@ -163,6 +172,9 @@ def process_assets_folder(
             else:
                 utils.remove(entry)
             stats.items_removed += 1
+            stats.events.append(
+                FileEvent(action="remove", target=entry, context="asset_stray")
+            )
 
     return stats
 
@@ -177,6 +189,7 @@ class MovieStats:
     asset_items_removed: int = 0
     loose_files_total: int = 0
     loose_files_linked: int = 0
+    events: list[FileEvent] = field(default_factory=list)
 
 
 def _ensure_dir(path: pathlib.Path, *, dry_run: bool) -> None:
@@ -194,6 +207,7 @@ def _remove_strays(
     keep: set[str],
     *,
     dry_run: bool,
+    events: list[FileEvent] | None = None,
 ) -> int:
     if not target_path.is_dir():
         return 0
@@ -211,6 +225,8 @@ def _remove_strays(
             )
             utils.remove(entry)
         removed += 1
+        if events is not None:
+            events.append(FileEvent(action="remove", target=entry, context="movie_stray"))
     return removed
 
 
@@ -266,17 +282,21 @@ def process_movie(
     _ensure_dir(target_path, dry_run=dry_run)
 
     for src_video, dst_video in videos_to_sync.values():
-        if materializer.materialize(src_video, dst_video, dry_run=dry_run, verbose=verbose):
+        if materializer.materialize(
+            src_video, dst_video, dry_run=dry_run, verbose=verbose, events=stats.events,
+        ):
             stats.videos_linked += 1
 
     for src_file, dst_file in loose_to_sync.values():
-        if materializer.materialize(src_file, dst_file, dry_run=dry_run, verbose=verbose):
+        if materializer.materialize(
+            src_file, dst_file, dry_run=dry_run, verbose=verbose, events=stats.events,
+        ):
             stats.loose_files_linked += 1
 
     if delete:
         keep = set(videos_to_sync) | set(assets_to_sync) | set(loose_to_sync)
         stats.items_removed += _remove_strays(
-            target_path, target.base_dir, keep, dry_run=dry_run,
+            target_path, target.base_dir, keep, dry_run=dry_run, events=stats.events,
         )
 
     for src_asset, dst_asset in assets_to_sync.values():
@@ -291,6 +311,7 @@ def process_movie(
         stats.asset_items_total += s.files_total
         stats.asset_items_linked += s.files_linked
         stats.asset_items_removed += s.items_removed
+        stats.events.extend(s.events)
 
     return stats
 
@@ -445,6 +466,7 @@ def sync(
         )
         lib_stats.items_linked += s.asset_items_linked + s.videos_linked + s.loose_files_linked
         lib_stats.movie_items_removed += s.asset_items_removed + s.items_removed
+        lib_stats.events.extend(s.events)
 
     total_removed = lib_stats.items_removed + lib_stats.movie_items_removed
     ignored_count = len(lib_stats.ignored)

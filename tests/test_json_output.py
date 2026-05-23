@@ -12,7 +12,7 @@ from pathlib import Path
 
 import jellyplex_sync as jp
 from jellyplex_sync.json_output import write_diff_json, write_sync_json
-from jellyplex_sync.library import CollectingReporter, Drop, IgnoredEntry
+from jellyplex_sync.library import CollectingReporter, Drop, FileEvent, IgnoredEntry
 from jellyplex_sync.sync import DiffEntry, DiffResult, LibraryStats
 
 
@@ -91,7 +91,52 @@ def test_sync_json_with_empty_stats() -> None:
     payload = json.loads(buf.getvalue())
     assert payload["ignored"] == []
     assert payload["translation_losses"] == []
+    assert payload["events"] == []
     assert payload["dry_run"] is True
+
+
+def test_sync_json_events_payload(tmp_path: Path) -> None:
+    """Events serialize with action + target always; source and context
+    only when present."""
+    stats = LibraryStats(
+        events=[
+            FileEvent(action="link", target=tmp_path / "dst.mkv", source=tmp_path / "src.mkv"),
+            FileEvent(action="skip", target=tmp_path / "dst2.mkv", source=tmp_path / "src2.mkv"),
+            FileEvent(action="remove", target=tmp_path / "stray.mkv", context="library_stray"),
+            FileEvent(action="remove", target=tmp_path / "ext.mkv", context="movie_stray"),
+        ]
+    )
+
+    buf = io.StringIO()
+    write_sync_json(
+        buf,
+        source_path=tmp_path / "src",
+        source_format="plex",
+        target_path=tmp_path / "dst",
+        target_format="jellyfin",
+        dry_run=False,
+        exit_code=0,
+        stats=stats,
+        drops=[],
+    )
+    payload = json.loads(buf.getvalue())
+    events = payload["events"]
+    assert len(events) == 4
+
+    # link: source present, no context
+    assert events[0] == {
+        "action": "link",
+        "target": str(tmp_path / "dst.mkv"),
+        "source": str(tmp_path / "src.mkv"),
+    }
+    # remove: no source, context present
+    assert events[2] == {
+        "action": "remove",
+        "target": str(tmp_path / "stray.mkv"),
+        "context": "library_stray",
+    }
+    # remove can carry different contexts
+    assert events[3]["context"] == "movie_stray"
 
 
 def test_sync_json_writes_trailing_newline() -> None:

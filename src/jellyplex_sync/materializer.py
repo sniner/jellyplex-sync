@@ -17,6 +17,8 @@ import pathlib
 import shutil
 from typing import Protocol
 
+from .library import FileEvent
+
 log = logging.getLogger(__name__)
 
 
@@ -30,11 +32,15 @@ class FileMaterializer(Protocol):
         *,
         dry_run: bool = False,
         verbose: bool = False,
+        events: list[FileEvent] | None = None,
     ) -> bool:
         """Make `dst` reflect `src`. Return True if a (re)materialization
         happened, False if `dst` already held the right content.
         Implementations are responsible for deciding what "already right"
-        means (e.g. same inode for hardlinks, size+mtime match for copies)."""
+        means (e.g. same inode for hardlinks, size+mtime match for copies).
+
+        If `events` is provided, appends a `FileEvent` describing the
+        action taken (`link` / `replace` / `skip`)."""
         ...
 
 
@@ -54,17 +60,25 @@ class HardlinkMaterializer:
         *,
         dry_run: bool = False,
         verbose: bool = False,
+        events: list[FileEvent] | None = None,
     ) -> bool:
         if dst.exists():
             if dst.samefile(src):
                 if verbose:
                     log.info("Target '%s' already linked", dst.name)
+                if events is not None:
+                    events.append(FileEvent(action="skip", target=dst, source=src))
                 return False
             log.info("Replacing '%s' → '%s'", src.name, dst.name)
             if dry_run:
                 log.info("DELETE %s", dst)
             else:
                 dst.unlink()
+            if events is not None:
+                events.append(FileEvent(action="replace", target=dst, source=src))
+        else:
+            if events is not None:
+                events.append(FileEvent(action="link", target=dst, source=src))
         if dry_run:
             log.info("LINK   %s", dst)
         else:
@@ -93,12 +107,17 @@ class CopyMaterializer:
         *,
         dry_run: bool = False,
         verbose: bool = False,
+        events: list[FileEvent] | None = None,
     ) -> bool:
         if dst.exists() and _same_size_and_mtime(src, dst):
             if verbose:
                 log.info("Target '%s' is up to date", dst.name)
+            if events is not None:
+                events.append(FileEvent(action="skip", target=dst, source=src))
             return False
-        return _copy(src, dst, dry_run=dry_run, replaces_existing=dst.exists())
+        return _copy(
+            src, dst, dry_run=dry_run, replaces_existing=dst.exists(), events=events
+        )
 
 
 class ForceCopyMaterializer:
@@ -119,9 +138,12 @@ class ForceCopyMaterializer:
         *,
         dry_run: bool = False,
         verbose: bool = False,
+        events: list[FileEvent] | None = None,
     ) -> bool:
         _ = verbose  # force-copy always logs the copy; verbose flag has no effect
-        return _copy(src, dst, dry_run=dry_run, replaces_existing=dst.exists())
+        return _copy(
+            src, dst, dry_run=dry_run, replaces_existing=dst.exists(), events=events
+        )
 
 
 def _same_size_and_mtime(a: pathlib.Path, b: pathlib.Path) -> bool:
@@ -136,6 +158,7 @@ def _copy(
     *,
     dry_run: bool,
     replaces_existing: bool,
+    events: list[FileEvent] | None = None,
 ) -> bool:
     if replaces_existing:
         if dry_run:
@@ -143,6 +166,11 @@ def _copy(
         else:
             log.info("Replacing '%s' → '%s'", src.name, dst.name)
             dst.unlink()
+        if events is not None:
+            events.append(FileEvent(action="replace", target=dst, source=src))
+    else:
+        if events is not None:
+            events.append(FileEvent(action="link", target=dst, source=src))
     if dry_run:
         log.info("COPY   %s", dst)
     else:
