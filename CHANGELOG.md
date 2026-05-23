@@ -63,6 +63,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **Ignored count is part of the sync summary line** — the text summary now reports
   `N ignored` next to the existing counters, so a glance at the last line tells the full
   story. The per-item list still appears below for context
+- **Stray items in target are now counted and surfaced** — items in the target library that
+  are not in the source were only logged as `Stray item found` lines (easy to miss when there
+  are dozens) and never appeared in the summary. They now contribute to a `strays kept in
+  target` count in the text summary and the JSON `summary.strays_in_target`, with the full
+  list under top-level `strays_in_target` in JSON. When strays exist and `--delete` was not
+  passed, the run ends with a warning that points at `--delete`. New
+  `LibraryStats.strays_in_target` field
 
 ## [0.1.6] - 2026-05-21
 

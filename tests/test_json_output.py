@@ -64,6 +64,7 @@ def test_sync_json_has_full_schema(tmp_path: Path) -> None:
         "files_updated": 10,
         "files_removed": 3,  # items_removed + movie_items_removed
         "items_ignored": 1,
+        "strays_in_target": 0,
     }
     assert payload["ignored"] == [
         {"path": str(tmp_path / "stray.txt"), "name": "stray.txt", "reason": "not a directory"}

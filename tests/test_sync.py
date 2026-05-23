@@ -101,6 +101,58 @@ def test_scan_media_library_dry_run_leaves_stray(tmp_path: Path) -> None:
     assert stray.exists()
 
 
+def test_scan_media_library_records_strays_without_delete(tmp_path: Path) -> None:
+    """Strays in target are recorded in LibraryStats regardless of --delete,
+    so the summary can warn about them. The migration scenario: user syncs
+    from Plex layout into a directory that still holds old Jellyfin-format
+    folders. Without this, the summary would falsely report "all in sync"
+    while 55 zombie folders sit in target."""
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    (src / "First (1984) [imdbid-tt001]").mkdir()
+    # Two strays in target — both must show up regardless of delete flag.
+    (dst / "Old (1990) {imdb-tt999}").mkdir()
+    (dst / "Other (1991) {imdb-tt998}").mkdir()
+
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    stats = LibraryStats()
+
+    list(scan_media_library(source, target, stats=stats, delete=False))
+
+    assert set(stats.strays_in_target) == {
+        "Old (1990) {imdb-tt999}",
+        "Other (1991) {imdb-tt998}",
+    }
+    assert stats.items_removed == 0  # nothing removed without --delete
+    # Strays still on disk
+    assert (dst / "Old (1990) {imdb-tt999}").exists()
+
+
+def test_scan_media_library_records_strays_with_delete(tmp_path: Path) -> None:
+    """With --delete the same items appear in strays_in_target AND get
+    counted in items_removed and removed from disk."""
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    (src / "First (1984) [imdbid-tt001]").mkdir()
+    stray = dst / "Old (1990) {imdb-tt999}"
+    stray.mkdir()
+
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    stats = LibraryStats()
+
+    list(scan_media_library(source, target, stats=stats, delete=True))
+
+    assert stats.strays_in_target == ["Old (1990) {imdb-tt999}"]
+    assert stats.items_removed == 1
+    assert not stray.exists()
+
+
 def test_scan_media_library_collects_ignored_entries(tmp_path: Path) -> None:
     """Stray files at the library root and unparseable folder names land in
     LibraryStats.ignored so the sync summary can surface them — important

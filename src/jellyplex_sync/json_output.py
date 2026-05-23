@@ -61,8 +61,10 @@ def write_sync_json(
             "files_updated": stats.items_linked,
             "files_removed": stats.items_removed + stats.movie_items_removed,
             "items_ignored": len(stats.ignored),
+            "strays_in_target": len(stats.strays_in_target),
         },
         "ignored": _ignored_payload(stats.ignored),
+        "strays_in_target": list(stats.strays_in_target),
         "translation_losses": _drops_payload(drops),
     }
     json.dump(payload, out, indent=2)

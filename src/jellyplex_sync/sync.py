@@ -41,6 +41,7 @@ class LibraryStats:
     items_linked: int = 0
     movie_items_removed: int = 0
     ignored: list[IgnoredEntry] = field(default_factory=list)
+    strays_in_target: list[str] = field(default_factory=list)
 
 
 def scan_media_library(
@@ -91,6 +92,7 @@ def scan_media_library(
 
     for entry in target.base_dir.iterdir():
         if entry.name not in movies_to_sync:
+            stats.strays_in_target.append(entry.name)
             if delete:
                 if dry_run:
                     log.info("DELETE %s", entry)
@@ -446,12 +448,17 @@ def sync(
 
     total_removed = lib_stats.items_removed + lib_stats.movie_items_removed
     ignored_count = len(lib_stats.ignored)
+    stray_count = len(lib_stats.strays_in_target)
+    # Strays that were *kept* (only meaningful without --delete; with --delete
+    # they were removed and already counted in total_removed).
+    strays_kept = stray_count if not delete else 0
 
     summary = (
         f"Summary: {lib_stats.movies_processed} of {lib_stats.movies_total} movies synced, "
         f"{lib_stats.items_linked} files updated, "
         f"{total_removed} files removed, "
-        f"{ignored_count} ignored."
+        f"{ignored_count} ignored, "
+        f"{strays_kept} strays kept in target."
     )
     log.info(summary)
 
@@ -459,6 +466,13 @@ def sync(
         log.info("Ignored root-level item(s) — these are NOT in the target:")
         for item in lib_stats.ignored:
             log.info("  '%s' (%s)", item.path.name, item.reason)
+
+    if strays_kept:
+        log.warning(
+            "%d item(s) in target are not in the source library. "
+            "Pass --delete to remove them (target then becomes a clean mirror).",
+            strays_kept,
+        )
 
     return 0
 
