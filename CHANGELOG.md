@@ -70,6 +70,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   list under top-level `strays_in_target` in JSON. When strays exist and `--delete` was not
   passed, the run ends with a warning that points at `--delete`. New
   `LibraryStats.strays_in_target` field
+- **Deduplicated translation losses** — `translation_losses` in `--json` output and
+  `Translation losses` in `diff` text now show distinct `(kind, key, value, reason)` tuples
+  only. A library with 50 files carrying a `[found]` label used to produce 50 identical
+  entries — noise, because the list doesn't map back to specific files anyway. The
+  per-file multiplicity stays available in `CollectingReporter.drops` for callers that want
+  it. New `dedupe_drops()` helper exported from the library
 - **Per-file `events` in `--json` output** — `sync --json` now emits a flat top-level `events`
   array with one entry per file action: `{action, target, source?, context?}`. Actions are
   `link`, `replace`, `skip`, `remove`; the run-level `dry_run` flag distinguishes "did" from

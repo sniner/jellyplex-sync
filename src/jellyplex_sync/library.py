@@ -29,6 +29,22 @@ class Drop:
     reason: str
 
 
+def dedupe_drops(drops: list[Drop] | tuple[Drop, ...]) -> list[Drop]:
+    """Collapse drops with identical (kind, key, value, reason) to one,
+    preserving first-occurrence order. Use at display time — the
+    Reporter itself stays lossless so a caller that wants per-file
+    multiplicity can still get it."""
+    seen: set[tuple[str, str | None, str, str]] = set()
+    out: list[Drop] = []
+    for d in drops:
+        sig = (d.kind, d.key, d.value, d.reason)
+        if sig in seen:
+            continue
+        seen.add(sig)
+        out.append(d)
+    return out
+
+
 class DropError(ValueError):
     """Raised by StrictReporter when the Writer reports a Drop."""
 

@@ -14,6 +14,7 @@ from .library import (
     LoggingReporter,
     Reporter,
     StrictReporter,
+    dedupe_drops,
 )
 from .materializer import (
     CopyMaterializer,
@@ -60,6 +61,7 @@ __all__ = [
     "Reporter",
     "StrictReporter",
     "VideoInfo",
+    "dedupe_drops",
     "diff",
     "sync",
 ]

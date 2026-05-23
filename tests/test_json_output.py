@@ -95,6 +95,31 @@ def test_sync_json_with_empty_stats() -> None:
     assert payload["dry_run"] is True
 
 
+def test_sync_json_dedupes_translation_losses() -> None:
+    """Same (kind, key, value, reason) tuple collapses to one entry —
+    distinct losses are what's actionable, per-file frequency isn't."""
+    same = Drop(kind="label", key=None, value="found", reason="no Jellyfin equivalent")
+    different = Drop(kind="label", key=None, value="rented", reason="no Jellyfin equivalent")
+
+    buf = io.StringIO()
+    write_sync_json(
+        buf,
+        source_path=Path("/src"),
+        source_format="plex",
+        target_path=Path("/dst"),
+        target_format="jellyfin",
+        dry_run=False,
+        exit_code=0,
+        stats=LibraryStats(),
+        drops=[same, same, different, same],
+    )
+    payload = json.loads(buf.getvalue())
+    assert payload["translation_losses"] == [
+        {"kind": "label", "key": None, "value": "found", "reason": "no Jellyfin equivalent"},
+        {"kind": "label", "key": None, "value": "rented", "reason": "no Jellyfin equivalent"},
+    ]
+
+
 def test_sync_json_events_payload(tmp_path: Path) -> None:
     """Events serialize with action + target always; source and context
     only when present."""

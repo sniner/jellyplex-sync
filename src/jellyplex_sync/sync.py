@@ -17,6 +17,7 @@ from .library import (
     LibraryWriter,
     LoggingReporter,
     Reporter,
+    dedupe_drops,
     movie_path,
     scan,
     video_path,
@@ -671,8 +672,9 @@ def _print_diff(
         print(file=out)
 
     if result.drops:
-        print(f"Translation losses ({len(result.drops)}):", file=out)
-        for d in result.drops:
+        distinct = dedupe_drops(list(result.drops))
+        print(f"Translation losses ({len(distinct)} distinct):", file=out)
+        for d in distinct:
             key = f"{d.key}=" if d.key else ""
             print(f"  ! {d.kind} {key}{d.value!r}: {d.reason}", file=out)
         print(file=out)

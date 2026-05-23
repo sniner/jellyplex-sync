@@ -16,7 +16,7 @@ import json
 import pathlib
 from typing import TYPE_CHECKING, Any, TextIO
 
-from .library import Drop, FileEvent, IgnoredEntry
+from .library import Drop, FileEvent, IgnoredEntry, dedupe_drops
 
 if TYPE_CHECKING:
     from .sync import DiffResult, LibraryStats
@@ -31,9 +31,12 @@ def _ignored_payload(entries: list[IgnoredEntry] | tuple[IgnoredEntry, ...]) -> 
 
 
 def _drops_payload(drops: tuple[Drop, ...] | list[Drop]) -> list[dict[str, Any]]:
+    """Distinct drops only — same (kind, key, value, reason) collapses to
+    one entry. The point is "what got lost", not the per-file frequency
+    (which the user can't map back to specific files from the list anyway)."""
     return [
         {"kind": d.kind, "key": d.key, "value": d.value, "reason": d.reason}
-        for d in drops
+        for d in dedupe_drops(list(drops))
     ]
 
 
