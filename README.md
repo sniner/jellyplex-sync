@@ -14,6 +14,8 @@ The script scans the source library, parses each movie folder for metadata (titl
 
 > ⚠️ **Movies only:** This script is designed exclusively for **movie libraries**. It does **not** support TV shows or miniseries. However, this is usually not a limitation in practice: for shows, Jellyfin and Plex use very similar directory structures, so you can typically point both apps to the same library without issues.
 
+> ⚠️ **Stacked / multi-part movies are not supported:** Plex's multi-part filename suffixes (`pt1`/`pt2`, `cd1`/`cd2`, `disc1`/`disc2`) are not recognized — each part is treated as a separate video, which will likely confuse the target scanner. Pre-join multi-disc releases with `mkvmerge` before adding them to your library.
+
 > ⚠️ **Hardlinks require a shared filesystem:** Source and target paths must live on the **same filesystem**. Hardlinks cannot span filesystems or physical disks. If they don't, switch to `--copy`. On Unraid's classic array this is a real concern — see the [Unraid section](#unraid-user-scripts) for details before running this tool there.
 
 ## Installation
