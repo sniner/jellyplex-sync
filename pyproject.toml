@@ -1,6 +1,6 @@
 [project]
 name = "jellyplex-sync"
-version = "0.3.1"
+version = "0.3.2"
 description = "Convert your media library between Jellyfin and Plex formats by creating a hard-linked mirror"
 authors = [{ name = "Stefan Schönberger", email = "stefan@sniner.dev" }]
 requires-python = ">=3.11"
