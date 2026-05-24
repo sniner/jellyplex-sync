@@ -174,7 +174,7 @@ class HashFallbackDisambiguator:
                 )
                 continue
 
-            for info, source in group:
+            for _info, source in group:
                 names[source] = rendered[source]
                 notes[source] = DisambiguationNote(
                     strategy="hash_suffix",

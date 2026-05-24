@@ -18,8 +18,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from .disambig import (
-    Disambiguator,
     DisambiguationResult,
+    Disambiguator,
     HashFallbackDisambiguator,
 )
 from .discover import DiscoveredGroup, SourceDiscoverer, TwoLevelDiscoverer
