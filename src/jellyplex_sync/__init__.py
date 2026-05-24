@@ -23,6 +23,7 @@ from .materializer import (
     FileMaterializer,
     ForceCopyMaterializer,
     HardlinkMaterializer,
+    MoveMaterializer,
 )
 from .model import (
     MovieInfo,
@@ -61,6 +62,7 @@ __all__ = [
     "FolderClash",
     "ForceCopyMaterializer",
     "HardlinkMaterializer",
+    "MoveMaterializer",
     "IgnoredEntry",
     "JellyfinLibraryReader",
     "JellyfinLibraryWriter",

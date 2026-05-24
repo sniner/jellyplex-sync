@@ -136,13 +136,111 @@ def test_force_copy_creates_independent_file(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
+# MoveMaterializer
+# ---------------------------------------------------------------------------
+
+
+def test_move_copies_and_removes_source(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+
+    mat = jp.MoveMaterializer()
+    assert mat.materialize(src, dst) is True
+    assert dst.read_bytes() == b"abc"
+    assert not src.exists()
+
+
+def test_move_preserves_mtime(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    os.utime(src, (1_700_000_000, 1_700_000_000))
+    dst = tmp_path / "dst.mkv"
+
+    jp.MoveMaterializer().materialize(src, dst)
+    assert dst.stat().st_mtime == 1_700_000_000
+
+
+def test_move_skips_when_already_moved(tmp_path: Path):
+    """If the target exists and the source is gone, the file was already
+    moved in a prior run — skip."""
+    dst = _touch(tmp_path / "dst.mkv", b"abc")
+    src = tmp_path / "src.mkv"  # does not exist
+
+    mat = jp.MoveMaterializer()
+    assert mat.materialize(src, dst) is False
+
+
+def test_move_skips_and_unlinks_when_target_matches(tmp_path: Path):
+    """If the target exists with matching size+mtime, the source is
+    leftover from a previous partial run — unlink it."""
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+    mat = jp.MoveMaterializer()
+    mat.materialize(src, dst)  # first run: copies + removes
+
+    # Re-create the source (simulate a partial re-run scenario).
+    _touch(tmp_path / "src.mkv", b"abc")
+    os.utime(src, (dst.stat().st_atime, dst.stat().st_mtime))
+
+    assert mat.materialize(src, dst) is False
+    assert not src.exists()
+
+
+def test_move_replaces_when_size_differs(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = _touch(tmp_path / "dst.mkv", b"abcdef")
+    os.utime(dst, (src.stat().st_atime, src.stat().st_mtime))
+
+    mat = jp.MoveMaterializer()
+    assert mat.materialize(src, dst) is True
+    assert dst.read_bytes() == b"abc"
+    assert not src.exists()
+
+
+def test_move_dry_run_keeps_source(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+
+    mat = jp.MoveMaterializer()
+    mat.materialize(src, dst, dry_run=True)
+    assert src.exists()
+    assert not dst.exists()
+
+
+def test_move_records_link_event(tmp_path: Path):
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+    events: list[jp.FileEvent] = []
+
+    jp.MoveMaterializer().materialize(src, dst, events=events)
+
+    assert len(events) == 1
+    assert events[0].action == "link"
+
+
+def test_move_records_skip_event_when_already_moved(tmp_path: Path):
+    dst = _touch(tmp_path / "dst.mkv", b"abc")
+    src = tmp_path / "src.mkv"
+    events: list[jp.FileEvent] = []
+
+    jp.MoveMaterializer().materialize(src, dst, events=events)
+
+    assert len(events) == 1
+    assert events[0].action == "skip"
+
+
+# ---------------------------------------------------------------------------
 # Dry run
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     "mat",
-    [jp.HardlinkMaterializer(), jp.CopyMaterializer(), jp.ForceCopyMaterializer()],
+    [
+        jp.HardlinkMaterializer(),
+        jp.CopyMaterializer(),
+        jp.ForceCopyMaterializer(),
+        jp.MoveMaterializer(),
+    ],
     ids=lambda m: m.name,
 )
 def test_dry_run_touches_nothing(tmp_path: Path, mat):

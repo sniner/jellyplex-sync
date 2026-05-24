@@ -146,6 +146,60 @@ class ForceCopyMaterializer:
         )
 
 
+class MoveMaterializer:
+    """Copy bytes from `src` to `dst`, then delete `src` on success.
+
+    Designed for staging-area workflows where the source is a temporary
+    dump and the target is the permanent library. Once the target file
+    is safely written (via `shutil.copy2`), the source is removed.
+
+    Re-run safety: if the target already exists with matching size and
+    mtime, the source is assumed to have been moved in a previous run
+    (or the copy was already successful) and is left alone.
+
+    If the source no longer exists but the target does, the file is
+    treated as already moved and silently skipped.
+    """
+
+    name = "move"
+
+    def materialize(
+        self,
+        src: pathlib.Path,
+        dst: pathlib.Path,
+        *,
+        dry_run: bool = False,
+        verbose: bool = False,
+        events: list[FileEvent] | None = None,
+    ) -> bool:
+        if not src.exists():
+            if dst.exists():
+                if verbose:
+                    log.info("Already moved '%s'", dst.name)
+                if events is not None:
+                    events.append(FileEvent(action="skip", target=dst))
+                return False
+            log.warning("Source '%s' does not exist, skipping", src)
+            return False
+
+        if dst.exists() and _same_size_and_mtime(src, dst):
+            if verbose:
+                log.info("Target '%s' is up to date, removing source", dst.name)
+            if events is not None:
+                events.append(FileEvent(action="skip", target=dst, source=src))
+            if not dry_run:
+                src.unlink()
+            return False
+
+        result = _copy(
+            src, dst, dry_run=dry_run, replaces_existing=dst.exists(), events=events
+        )
+        if result and not dry_run:
+            src.unlink()
+            log.info("Removed source '%s'", src.name)
+        return result
+
+
 def _same_size_and_mtime(a: pathlib.Path, b: pathlib.Path) -> bool:
     a_stat = a.stat()
     b_stat = b.stat()
