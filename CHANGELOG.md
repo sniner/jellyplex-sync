@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.1] - 2026-05-24
+
+### Changed
+- **Developer docs split into DEV.md and SPECS.md** — `DEV.md` now covers the
+  pipeline architecture (data flow diagram, module map, Plan IR, protocol overview);
+  Plex/Jellyfin format specifications, translation rules, resolution label choices,
+  extras subfolder conventions, and edge cases moved to the new `SPECS.md`
+
 ## [0.3.0] - 2026-05-24
 
 ### Breaking changes
