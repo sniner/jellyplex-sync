@@ -8,6 +8,7 @@ from .library import (
     Drop,
     DropError,
     FileEvent,
+    FolderClash,
     IgnoredEntry,
     LibraryReader,
     LibraryWriter,
@@ -27,6 +28,13 @@ from .model import (
     MovieInfo,
     VideoInfo,
 )
+from .plan import (
+    DisambiguationNote,
+    Plan,
+    PlannedAsset,
+    PlannedFile,
+    PlannedMovie,
+)
 from .plex import (
     PlexLibraryReader,
     PlexLibraryWriter,
@@ -35,6 +43,7 @@ from .sync import (
     DiffEntry,
     DiffResult,
     diff,
+    plan,
     sync,
 )
 
@@ -44,10 +53,12 @@ __all__ = [
     "CopyMaterializer",
     "DiffEntry",
     "DiffResult",
+    "DisambiguationNote",
     "Drop",
     "DropError",
     "FileEvent",
     "FileMaterializer",
+    "FolderClash",
     "ForceCopyMaterializer",
     "HardlinkMaterializer",
     "IgnoredEntry",
@@ -58,6 +69,10 @@ __all__ = [
     "LoggingReporter",
     "MovieClash",
     "MovieInfo",
+    "Plan",
+    "PlannedAsset",
+    "PlannedFile",
+    "PlannedMovie",
     "PlexLibraryReader",
     "PlexLibraryWriter",
     "Reporter",
@@ -65,5 +80,6 @@ __all__ = [
     "VideoInfo",
     "dedupe_drops",
     "diff",
+    "plan",
     "sync",
 ]

@@ -726,3 +726,141 @@ def _print_diff(
 
     if not result.has_differences:
         print("In sync. No differences found.", file=out)
+
+
+# ---------------------------------------------------------------------------
+# plan: build a Plan without acting on it
+# ---------------------------------------------------------------------------
+
+
+def plan(
+    source: str,
+    target: str,
+    *,
+    debug: bool = False,
+    source_format: str | None = None,
+    target_format: str | None = None,
+    out=None,
+    as_json: bool = False,
+) -> int:
+    """Build the Plan a sync would execute and print it. Read-only on
+    both source and target. Exit code is 0 if a Plan was produced,
+    2 if there was a setup error (paths or format resolution). Clashes
+    and translation losses are reported but don't change the exit code
+    — they're informative, not failures."""
+    import sys
+
+    if debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    out = out or sys.stdout
+    source_path = pathlib.Path(source)
+    target_path = pathlib.Path(target)
+
+    resolved = _resolve_formats(source_path, source_format, target_format)
+    if resolved is None:
+        return 2
+    source_short, target_short = resolved
+
+    source_reader_cls, _ = _LIBRARY_TYPES[source_short]
+    _, target_writer_cls = _LIBRARY_TYPES[target_short]
+    source_reader = source_reader_cls(source_path)
+    target_writer = target_writer_cls(target_path)
+
+    if not source_reader.base_dir.is_dir():
+        log.error("Source directory '%s' does not exist", source_reader.base_dir)
+        return 2
+    # The target dir doesn't need to exist for `plan` — the whole point
+    # is to ask "what WOULD happen" before any sync sets up the target.
+
+    reporter = CollectingReporter()
+    planner = Planner(
+        reader=source_reader,
+        writer=target_writer,
+        disambiguator=NaiveDisambiguator(),
+        reporter=reporter,
+    )
+    built_plan = planner.plan()
+
+    if as_json:
+        from .json_output import write_plan_json
+
+        write_plan_json(out, built_plan, drops=tuple(reporter.drops))
+    else:
+        _print_plan(built_plan, tuple(reporter.drops), out)
+    return 0
+
+
+def _print_plan(
+    built_plan,
+    drops: tuple,
+    out,
+) -> None:
+    print(
+        f"Plan for source '{built_plan.source_root}' "
+        f"({built_plan.source_format.capitalize()}) → target "
+        f"'{built_plan.target_root}' ({built_plan.target_format.capitalize()})",
+        file=out,
+    )
+    print(file=out)
+
+    if built_plan.movies:
+        print(f"Movies ({len(built_plan.movies)}):", file=out)
+        for m in built_plan.movies:
+            print(f"  ~ '{m.source_path.name}' → '{m.target_folder.name}'", file=out)
+            for v in m.videos:
+                line = f"      '{v.source.name}' → '{v.target_name}'"
+                if v.disambiguation is not None:
+                    line += f"  [{v.disambiguation.strategy}]"
+                print(line, file=out)
+            if m.loose_files:
+                names = ", ".join(f"'{f.target_name}'" for f in m.loose_files)
+                print(f"      loose: {names}", file=out)
+            for a in m.assets:
+                count = _count_asset_files(a)
+                suffix = "file" if count == 1 else "files"
+                print(f"      assets: '{a.folder_name}' ({count} {suffix})", file=out)
+        print(file=out)
+
+    if built_plan.folder_clashes:
+        print(f"Folder clashes ({len(built_plan.folder_clashes)}):", file=out)
+        for fc in built_plan.folder_clashes:
+            srcs = ", ".join(f"'{s}'" for s in fc.source_folder_names)
+            print(f"  ! {srcs} → '{fc.target_folder_name}'", file=out)
+        print(file=out)
+
+    if built_plan.clashes:
+        print(f"Movie clashes ({len(built_plan.clashes)}):", file=out)
+        for c in built_plan.clashes:
+            srcs = ", ".join(f"'{s}'" for s in c.source_filenames)
+            print(
+                f"  ! in '{c.movie_folder}': {srcs} → '{c.target_filename}'",
+                file=out,
+            )
+        print(file=out)
+
+    if drops:
+        distinct = dedupe_drops(list(drops))
+        print(f"Translation losses ({len(distinct)} distinct):", file=out)
+        for d in distinct:
+            key = f"{d.key}=" if d.key else ""
+            print(f"  ! {d.kind} {key}{d.value!r}: {d.reason}", file=out)
+        print(file=out)
+
+    if built_plan.ignored:
+        print(f"Ignored in source ({len(built_plan.ignored)}):", file=out)
+        for i in built_plan.ignored:
+            print(f"  ! '{i.path.name}': {i.reason}", file=out)
+        print(file=out)
+
+    if not (
+        built_plan.movies
+        or built_plan.folder_clashes
+        or built_plan.clashes
+        or built_plan.ignored
+    ):
+        print("Empty plan. Nothing to sync.", file=out)
+
+
+def _count_asset_files(asset) -> int:
+    return len(asset.files) + sum(_count_asset_files(sf) for sf in asset.subfolders)

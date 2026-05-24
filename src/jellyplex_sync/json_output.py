@@ -16,7 +16,8 @@ import json
 import pathlib
 from typing import TYPE_CHECKING, Any, TextIO
 
-from .library import Drop, FileEvent, IgnoredEntry, MovieClash, dedupe_drops
+from .library import Drop, FileEvent, FolderClash, IgnoredEntry, MovieClash, dedupe_drops
+from .plan import Plan, PlannedAsset, PlannedFile, PlannedMovie
 
 if TYPE_CHECKING:
     from .sync import DiffResult, LibraryStats
@@ -97,6 +98,81 @@ def write_sync_json(
         "translation_losses": _drops_payload(drops),
         "clashes": _clashes_payload(stats.clashes),
         "events": _events_payload(stats.events),
+    }
+    json.dump(payload, out, indent=2)
+    out.write("\n")
+
+
+def _planned_file_payload(f: PlannedFile) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "source": str(f.source),
+        "target_name": f.target_name,
+    }
+    if f.disambiguation is not None:
+        payload["disambiguation"] = {
+            "strategy": f.disambiguation.strategy,
+            "detail": f.disambiguation.detail,
+        }
+    return payload
+
+
+def _planned_asset_payload(a: PlannedAsset) -> dict[str, Any]:
+    return {
+        "source": str(a.source),
+        "folder_name": a.folder_name,
+        "files": [_planned_file_payload(f) for f in a.files],
+        "subfolders": [_planned_asset_payload(sf) for sf in a.subfolders],
+    }
+
+
+def _planned_movie_payload(m: PlannedMovie) -> dict[str, Any]:
+    return {
+        "source_folder": m.source_path.name,
+        "source_path": str(m.source_path),
+        "target_folder": m.target_folder.name,
+        "target_path": str(m.target_folder),
+        "videos": [_planned_file_payload(f) for f in m.videos],
+        "loose_files": [_planned_file_payload(f) for f in m.loose_files],
+        "assets": [_planned_asset_payload(a) for a in m.assets],
+    }
+
+
+def _folder_clashes_payload(clashes: tuple[FolderClash, ...]) -> list[dict[str, Any]]:
+    return [
+        {
+            "target_folder_name": fc.target_folder_name,
+            "source_folder_names": list(fc.source_folder_names),
+        }
+        for fc in clashes
+    ]
+
+
+def write_plan_json(
+    out: TextIO,
+    plan: Plan,
+    *,
+    drops: tuple[Drop, ...] | list[Drop] = (),
+) -> None:
+    """Serialise a Plan to JSON. `drops` come from the reporter the
+    Planner was fed — they aren't on the Plan itself because they
+    belong to translation, not to the plan structure."""
+    distinct_drops = dedupe_drops(list(drops))
+    payload = {
+        "operation": "plan",
+        "source": _endpoint_payload(plan.source_root, plan.source_format),
+        "target": _endpoint_payload(plan.target_root, plan.target_format),
+        "summary": {
+            "movies": len(plan.movies),
+            "folder_clashes": len(plan.folder_clashes),
+            "movie_clashes": len(plan.clashes),
+            "translation_losses": len(distinct_drops),
+            "ignored": len(plan.ignored),
+        },
+        "movies": [_planned_movie_payload(m) for m in plan.movies],
+        "folder_clashes": _folder_clashes_payload(plan.folder_clashes),
+        "movie_clashes": _clashes_payload(list(plan.clashes)),
+        "translation_losses": _drops_payload(drops),
+        "ignored": _ignored_payload(list(plan.ignored)),
     }
     json.dump(payload, out, indent=2)
     out.write("\n")

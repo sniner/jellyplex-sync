@@ -7,7 +7,7 @@ import sys
 
 import jellyplex_sync as jp
 
-_SUBCOMMANDS = {"sync", "diff"}
+_SUBCOMMANDS = {"sync", "diff", "plan"}
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -90,6 +90,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_io_args(diff_p)
 
+    plan_p = sub.add_parser(
+        "plan",
+        parents=[common],
+        help="Show the Plan a sync would execute, without touching the target.",
+    )
+    _add_io_args(plan_p)
+
     return parser
 
 
@@ -156,6 +163,8 @@ def main() -> None:
         result = _do_sync(args)
     elif args.command == "diff":
         result = _do_diff(args)
+    elif args.command == "plan":
+        result = _do_plan(args)
     else:
         parser.error(f"unknown command: {args.command!r}")
         result = 2
@@ -227,6 +236,26 @@ def _do_diff(args: argparse.Namespace) -> int:
 
     try:
         return diff(
+            args.source,
+            args.target,
+            debug=args.debug,
+            source_format=args.source_format,
+            target_format=args.target_format,
+            as_json=args.json,
+        )
+    except KeyboardInterrupt:
+        logging.info("INTERRUPTED")
+        return 10
+    except Exception as exc:
+        logging.error("Exception: %s", exc)
+        return 99
+
+
+def _do_plan(args: argparse.Namespace) -> int:
+    from jellyplex_sync.sync import plan as plan_fn
+
+    try:
+        return plan_fn(
             args.source,
             args.target,
             debug=args.debug,
