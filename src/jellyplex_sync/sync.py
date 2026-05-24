@@ -715,5 +715,5 @@ def _print_diff(
             print(f"  ! '{i.path.name}': {i.reason}", file=out)
         print(file=out)
 
-    if not result.has_differences and not result.drops:
+    if not result.has_differences:
         print("In sync. No differences found.", file=out)

@@ -116,6 +116,27 @@ def test_diff_does_not_touch_filesystem(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
+def test_diff_in_sync_message_shown_despite_translation_drops(tmp_path: Path):
+    """Translation losses are informative, not sync problems. A library
+    with `[remux]` etc. always produces drops on every diff run; gating
+    the "In sync" confirmation on drops==0 would mean users never see it
+    on real libraries, undermining the signal."""
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    src.mkdir()
+    movie_dir = src / "First (1984) {imdb-tt001}"
+    movie_dir.mkdir()
+    _touch(movie_dir / "First (1984) {imdb-tt001} [remux].mkv", b"v")
+    _seed_synced_target(src, dst)  # real sync drops [remux]; tree is in sync
+
+    buf = io.StringIO()
+    rc = diff(str(src), str(dst), out=buf)
+    output = buf.getvalue()
+
+    assert rc == 0  # trees match
+    assert "Translation losses" in output  # but drops are still reported
+    assert "In sync" in output
+
+
 def test_diff_reports_translation_drops(tmp_path: Path):
     """A Plex `[remux]` label has no equivalent in a Jellyfin version label
     and gets reported as a translation loss in the diff output."""
