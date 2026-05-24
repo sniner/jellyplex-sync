@@ -7,7 +7,6 @@ from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 
 from . import utils
-from .disambig import NaiveDisambiguator
 from .jellyfin import JellyfinLibraryReader, JellyfinLibraryWriter
 from .library import (
     ACCEPTED_VIDEO_SUFFIXES,
@@ -470,13 +469,13 @@ def sync(
 
     lib_stats = stats if stats is not None else LibraryStats()
 
-    # 0.3 pipeline: build the Plan, then apply it.
-    # NaiveDisambiguator preserves the pre-0.3 "movie skipped on video clash"
-    # reporting; the default switches to HashFallback in a later release.
+    # 0.3 pipeline: build the Plan, then apply it. The Planner's default
+    # HashFallbackDisambiguator auto-resolves video-level clashes by
+    # appending a short hash of the source filename — sync always
+    # succeeds, the user gets a warning rather than a hard failure.
     planner = Planner(
         reader=source_reader,
         writer=target_writer,
-        disambiguator=NaiveDisambiguator(),
         reporter=reporter,
     )
     plan = planner.plan()
@@ -656,7 +655,6 @@ def diff(
     planner = Planner(
         reader=source_reader,
         writer=target_writer,
-        disambiguator=NaiveDisambiguator(),
         reporter=reporter,
     )
     plan = planner.plan()
@@ -777,7 +775,6 @@ def plan(
     planner = Planner(
         reader=source_reader,
         writer=target_writer,
-        disambiguator=NaiveDisambiguator(),
         reporter=reporter,
     )
     built_plan = planner.plan()

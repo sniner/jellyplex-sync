@@ -4,6 +4,48 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Breaking changes
+- **Video-level clashes are now auto-resolved with a hash suffix** instead of skipping the
+  whole movie. When two source files would collide on the same target filename — common in
+  the lossy P→J translation (`[1080p].mkv` and `[1080p] [remux].mkv` both collapse to
+  `- BD.mkv`) — the colliding files now get a short SHA-256 prefix of their source filename
+  appended (e.g. `Movie - BD [a3f7c819].mkv`). Both files get synced; the user gets a
+  warning rather than a hard failure. This makes the "every source file is reproducibly
+  syncable" property unconditional. Detect hash-suffixed names in `--json` output via the
+  per-file `disambiguation` field (`strategy="hash_suffix"`), or in the new `plan`
+  subcommand. The `MovieClash` type is preserved but rarely populated — only by SHA-256
+  prefix collisions, which are astronomically unlikely for typical folder sizes
+- **`LibraryWriter.video_name` Protocol gained a `hash_suffix: str | None = None` kwarg.**
+  Backward-compatible for existing callers (default `None` reproduces the pre-0.3 output);
+  only relevant if you've implemented a custom `LibraryWriter` and want pyright/mypy to
+  treat it as Protocol-conformant. Built-in PlexLibraryWriter and JellyfinLibraryWriter
+  place the hash in a bracket label at the end / in the version-label position respectively
+
+### Added
+- **`plan` subcommand and `jp.plan()` function** — produce the immutable Plan a sync would
+  execute, in human-readable text or `--json` form, without touching either filesystem.
+  Use it as a pre-flight check before sync (will this clash? what gets translated?) or as
+  the machine-readable answer for tooling. Unlike `sync` and `diff`, the target directory
+  does not need to exist
+- **Plan IR exported from the public API**: `Plan`, `PlannedMovie`, `PlannedFile`,
+  `PlannedAsset`, `DisambiguationNote`, `FolderClash`. All `frozen=True` — safely shareable
+  between phases, serialisable, comparable across runs. Use them to build tooling against a
+  stable description of what a sync would do
+- **Pipeline architecture** under the hood: source discovery, planning, and realization
+  are now separate concerns living in `discover.py`, `planner.py`, `disambig.py`,
+  `realize.py`, and `compare.py`. `sync()` and `diff()` are thin wrappers around the same
+  pipeline that `plan()` uses, so the three commands stay in lock-step. The new modules
+  are importable directly (`from jellyplex_sync.planner import Planner`, etc.) but aren't
+  re-exported from the top-level package yet — pin to a specific module path if you build
+  against them
+
+### Changed
+- **`sync()` is now wholly defined as Planner + Realizer**, with `Realizer` the only layer
+  that observes `dry_run`. Behaviour is preserved for the common case; the one user-visible
+  difference is the clash auto-resolution above
+
 ## [0.2.2] - 2026-05-24
 
 ### Fixed

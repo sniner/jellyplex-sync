@@ -167,7 +167,10 @@ def test_plan_text_shows_folder_clash(tmp_path: Path):
     assert "Movie (2020) [imdbid-tt001]" in text
 
 
-def test_plan_text_shows_movie_clash(tmp_path: Path):
+def test_plan_text_shows_hash_disambiguation_on_collision(tmp_path: Path):
+    """With HashFallback as the default, two videos that would collide
+    on the naive target name get resolved with a hash suffix and both
+    appear in the plan with a [hash_suffix] marker."""
     src, dst = tmp_path / "src", tmp_path / "dst"
     src.mkdir()
     dst.mkdir()
@@ -178,7 +181,10 @@ def test_plan_text_shows_movie_clash(tmp_path: Path):
     out = io.StringIO()
     jp.plan(str(src), str(dst), out=out)
     text = out.getvalue()
-    assert "Movie clashes (1)" in text
+    # Both videos appear, both carry a disambiguation marker.
+    assert text.count("[hash_suffix]") == 2
+    # No clash section — the disambiguator resolved it.
+    assert "Movie clashes" not in text
 
 
 def test_plan_text_shows_translation_losses(tmp_path: Path):
