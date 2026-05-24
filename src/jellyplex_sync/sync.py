@@ -28,7 +28,7 @@ from .materializer import FileMaterializer, HardlinkMaterializer
 from .model import MovieInfo
 from .planner import Planner
 from .plex import PlexLibraryReader, PlexLibraryWriter
-from .realize import RealizeStats, Realizer
+from .realize import Realizer, RealizeStats
 
 log = logging.getLogger(__name__)
 
@@ -646,7 +646,23 @@ def diff(
         log.error("Target directory '%s' does not exist", target_writer.base_dir)
         return 2
 
-    result = _compute_diff(source_reader, target_writer)
+    # 0.3 pipeline: Planner.plan() + compare(plan). The reporter
+    # accumulates translation drops while the Planner walks the source;
+    # compare() doesn't observe drops (it only reads the target), so we
+    # stitch them onto the DiffResult afterwards.
+    from .compare import compare as _compare_plan
+
+    reporter = CollectingReporter()
+    planner = Planner(
+        reader=source_reader,
+        writer=target_writer,
+        disambiguator=NaiveDisambiguator(),
+        reporter=reporter,
+    )
+    plan = planner.plan()
+    result = _compare_plan(plan)
+    result.drops = tuple(reporter.drops)
+
     if as_json:
         from .json_output import write_diff_json
 
@@ -654,62 +670,6 @@ def diff(
     else:
         _print_diff(result, source_short, target_short, source_path, target_path, out)
     return 1 if result.has_differences else 0
-
-
-def _compute_diff(source: LibraryReader, target: LibraryWriter) -> DiffResult:
-    reporter = CollectingReporter()
-    ignored: list[IgnoredEntry] = []
-
-    expected: dict[str, set[str]] = {}
-    source_folder_for: dict[str, str] = {}
-    for source_movie_path, movie in scan(source, ignored=ignored):
-        target_movie_name = target.movie_name(movie, reporter)
-        source_folder_for[target_movie_name] = source_movie_path.name
-        expected_files: set[str] = set()
-        for entry in source_movie_path.glob("*"):
-            if entry.name.startswith("."):
-                continue
-            if entry.is_file() and entry.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
-                video = source.parse_video(entry)
-                expected_files.add(target.video_name(movie, video, reporter))
-            elif entry.is_file() or entry.is_dir():
-                expected_files.add(entry.name)
-        expected[target_movie_name] = expected_files
-
-    actual: dict[str, set[str]] = {}
-    for entry in target.base_dir.iterdir():
-        if not entry.is_dir():
-            continue
-        actual[entry.name] = {sub.name for sub in entry.iterdir()}
-
-    only_source = tuple(
-        MovieOnlyInSource(
-            source_folder=source_folder_for[name],
-            expected_target=name,
-        )
-        for name in sorted(set(expected) - set(actual))
-    )
-    only_target = sorted(set(actual) - set(expected))
-    differing: list[DiffEntry] = []
-    for name in sorted(set(expected) & set(actual)):
-        src_only = tuple(sorted(expected[name] - actual[name]))
-        tgt_only = tuple(sorted(actual[name] - expected[name]))
-        if src_only or tgt_only:
-            differing.append(
-                DiffEntry(
-                    target_movie_name=name,
-                    only_in_source=src_only,
-                    only_in_target=tgt_only,
-                )
-            )
-
-    return DiffResult(
-        movies_only_in_source=only_source,
-        movies_only_in_target=tuple(only_target),
-        differing_movies=tuple(differing),
-        drops=tuple(reporter.drops),
-        ignored=tuple(ignored),
-    )
 
 
 def _print_diff(
