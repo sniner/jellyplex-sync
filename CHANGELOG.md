@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.3] - 2026-05-24
+
+### Added
+- **Standalone Linux binary** attached to each GitHub release — a single-file PyInstaller
+  build (`jellyplex-sync-linux-x86_64`) for environments where installing a Python package is
+  impractical (Unraid, Docker-less NAS setups). Download, `chmod +x`, run
+
+### Removed
+- **Forgejo workflow** — was not maintained and had drifted from the GitHub workflow
+
 ## [0.3.2] - 2026-05-24
 
 ### Added
