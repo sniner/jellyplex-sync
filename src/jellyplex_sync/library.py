@@ -181,6 +181,16 @@ class MovieClash:
 
 
 @dataclass
+class FolderClash:
+    """Two or more source folders translate to the same target folder
+    name. All affected source folders are skipped wholesale — same
+    behaviour as MovieClash, just one level up (folder vs. file)."""
+
+    target_folder_name: str
+    source_folder_names: tuple[str, ...]
+
+
+@dataclass
 class FileEvent:
     """A per-file action recorded during sync — the granular companion to
     the aggregate counters in LibraryStats.
