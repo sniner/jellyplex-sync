@@ -6,6 +6,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from .discover import FlatDiscoverer
 from .jellyfin import JellyfinLibraryReader, JellyfinLibraryWriter
 from .library import (
     ACCEPTED_VIDEO_SUFFIXES,
@@ -19,7 +20,6 @@ from .library import (
     Reporter,
     dedupe_drops,
 )
-from .discover import FlatDiscoverer
 from .materializer import FileMaterializer, HardlinkMaterializer, MoveMaterializer
 from .planner import Planner
 from .plex import PlexLibraryReader, PlexLibraryWriter

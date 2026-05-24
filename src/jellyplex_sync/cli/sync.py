@@ -309,10 +309,7 @@ def _do_plan(args: argparse.Namespace) -> int:
 def _do_import(args: argparse.Namespace) -> int:
     from jellyplex_sync.sync import import_media
 
-    if args.mode == "move":
-        materializer = jp.MoveMaterializer()
-    else:
-        materializer = jp.CopyMaterializer()
+    materializer = jp.MoveMaterializer() if args.mode == "move" else jp.CopyMaterializer()
 
     try:
         return import_media(
