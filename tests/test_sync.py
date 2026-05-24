@@ -73,6 +73,7 @@ def test_scan_media_library_removes_stray_with_delete(tmp_path: Path) -> None:
     (src / "First (1984) [imdbid-tt001]").mkdir()
     stray = dst / "Stray (1999) {imdb-tt999}"
     stray.mkdir()
+    _touch(stray / "Stray.mkv", b"v")
 
     source = jp.JellyfinLibraryReader(src)
     target = jp.PlexLibraryWriter(dst)
@@ -141,6 +142,7 @@ def test_scan_media_library_records_strays_with_delete(tmp_path: Path) -> None:
     (src / "First (1984) [imdbid-tt001]").mkdir()
     stray = dst / "Old (1990) {imdb-tt999}"
     stray.mkdir()
+    _touch(stray / "Old.mkv", b"v")
 
     source = jp.JellyfinLibraryReader(src)
     target = jp.PlexLibraryWriter(dst)
@@ -151,6 +153,55 @@ def test_scan_media_library_records_strays_with_delete(tmp_path: Path) -> None:
     assert stats.strays_in_target == ["Old (1990) {imdb-tt999}"]
     assert stats.items_removed == 1
     assert not stray.exists()
+
+
+def test_scan_media_library_counts_files_inside_stray_dirs(tmp_path: Path) -> None:
+    """A stray dir with N files contributes N to items_removed, not 1.
+    Pre-0.2.2 a single `items_removed += 1` per entry produced "1 files
+    removed" summaries for whole movie folders being torn down."""
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    (src / "First (1984) [imdbid-tt001]").mkdir()
+    stray = dst / "Old (1990) {imdb-tt999}"
+    stray.mkdir()
+    _touch(stray / "Old.mkv", b"v")
+    _touch(stray / "Old.nfo", b"n")
+    _touch(stray / "extras" / "bonus.mkv", b"b")
+
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    stats = LibraryStats()
+
+    list(scan_media_library(source, target, stats=stats, delete=True))
+
+    assert not stray.exists()
+    assert stats.items_removed == 3  # three files, not "one entry"
+
+
+def test_scan_media_library_dry_run_predicts_recursive_file_count(tmp_path: Path) -> None:
+    """Dry-run summary must predict the same file count the real run
+    would produce — otherwise users see "1 files would be removed" in
+    dry-run and 50 in the actual run, undermining trust in the preview."""
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    (src / "First (1984) [imdbid-tt001]").mkdir()
+    stray = dst / "Old (1990) {imdb-tt999}"
+    stray.mkdir()
+    for n in range(5):
+        _touch(stray / f"part-{n}.mkv", b"v")
+
+    source = jp.JellyfinLibraryReader(src)
+    target = jp.PlexLibraryWriter(dst)
+    stats = LibraryStats()
+
+    list(scan_media_library(source, target, stats=stats, delete=True, dry_run=True))
+
+    assert stray.exists()
+    assert stats.items_removed == 5
 
 
 def test_scan_media_library_records_library_stray_remove_events(tmp_path: Path) -> None:

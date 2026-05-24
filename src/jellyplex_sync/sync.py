@@ -111,8 +111,7 @@ def scan_media_library(
                     log.info("DELETE %s", entry)
                 else:
                     log.info("Removing stray item '%s' in target library", entry.name)
-                    utils.remove(entry)
-                stats.items_removed += 1
+                stats.items_removed += utils.remove(entry, dry_run=dry_run).files
                 stats.events.append(
                     FileEvent(action="remove", target=entry, context="library_stray")
                 )
@@ -180,9 +179,7 @@ def process_assets_folder(
             log.info("Removing stray item '%s' in target folder", entry.name)
             if dry_run:
                 log.info("DELETE %s", entry.name)
-            else:
-                utils.remove(entry)
-            stats.items_removed += 1
+            stats.items_removed += utils.remove(entry, dry_run=dry_run).files
             stats.events.append(
                 FileEvent(action="remove", target=entry, context="asset_stray")
             )
@@ -235,8 +232,7 @@ def _remove_strays(
                 entry.name,
                 target_path.relative_to(base_dir),
             )
-            utils.remove(entry)
-        removed += 1
+        removed += utils.remove(entry, dry_run=dry_run).files
         if events is not None:
             events.append(FileEvent(action="remove", target=entry, context="movie_stray"))
     return removed
