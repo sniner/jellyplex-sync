@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.2] - 2026-05-24
+
+### Added
+- **`import` subcommand (experimental)** — imports video files from a staging area (a flat
+  directory or directory tree where properly named videos have been dumped) into a structured
+  movie library. Files are grouped by their parsed movie identity (title, year, provider ID)
+  and placed into the correct one-folder-per-movie layout in the target. Default materializer
+  is `--move` (copy + delete source); `--copy` keeps the source. Does not touch existing
+  content in the target library — it only adds. Loose non-video files and asset directories
+  in the staging area are not imported. `jp.import_media()` is the public API function
+- **`MoveMaterializer`** — new materialization strategy: copy the file to the target, then
+  delete the source on success. Re-run safe: if the target already exists and matches, the
+  source is cleaned up without re-copying. Exported as `jp.MoveMaterializer`
+- **`FlatDiscoverer`** — new `SourceDiscoverer` implementation that groups video files by
+  filename parsing instead of folder structure. Works recursively on arbitrary directory trees.
+  Importable from `jellyplex_sync.discover`
+
 ## [0.3.1] - 2026-05-24
 
 ### Changed

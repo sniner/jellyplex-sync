@@ -46,11 +46,12 @@ docker build -t jellyplex-sync .
 
 ## Usage
 
-The CLI is split into three subcommands:
+The CLI is split into four subcommands:
 
 - **`sync`** — mirror a source library into the target layout (the historical operation; this is also the default if you omit the subcommand).
 - **`diff`** — read-only comparison of source and target. No filesystem changes. Useful before deleting your source after a migration.
 - **`plan`** — show the Plan a sync would execute (text or `--json`), without touching either side. Pre-flight check before sync, or machine-readable input for tooling.
+- **`import`** — **(experimental)** import video files from a staging area into a structured library. See below.
 
 ### `sync`
 
@@ -155,6 +156,49 @@ Machine-readable, with `jq` to find videos that needed disambiguation:
 ```bash
 jellyplex-sync plan --json ~/Media/Plex ~/Media/Jellyfin \
     | jq '.movies[].videos[] | select(.disambiguation) | {source, target_name, disambiguation}'
+```
+
+### `import` (experimental)
+
+> ⚠️ **This subcommand is experimental.** The exact behaviour may change in future releases as real-world use cases become clearer. Always start with `--dry-run`.
+
+```bash
+jellyplex-sync import [OPTIONS] /path/to/staging /path/to/target/library
+```
+
+Imports video files from a staging area — a flat directory (or directory tree) where properly named video files have been dumped without the one-folder-per-movie structure that `sync` expects. Files are grouped by their parsed movie identity (title, year, provider ID) and placed into the correct movie folder in the target library.
+
+Semantically distinct from `sync`:
+
+- `sync` mirrors a structured library; the source stays intact.
+- `import` ingests from an unstructured dump; the source files are **moved** (deleted after successful copy) by default.
+- `import` never removes anything from the target — it only adds.
+
+**Materializer flags** (mutually exclusive):
+
+- `--move` (default) — copy each file to the target, then delete the source.
+- `--copy` — copy files; the source is kept. Safe for a test run without `--dry-run`.
+
+Other flags: `--dry-run`, `--create`, `--source-format`, `--target-format`, `-v`, `--debug`.
+
+#### Limitations
+
+- **Loose non-video files** (posters, `.nfo`, subtitles) in the staging area are not imported — there is no folder to assign them to. The target media server can download its own metadata.
+- **Asset directories** (extras, trailers) in the staging area are not collected.
+- **No `--json` output** yet for import.
+
+#### Example
+
+Move Plex-named video files into a new Jellyfin library:
+
+```bash
+jellyplex-sync import --create /mnt/staging /mnt/library/Jellyfin
+```
+
+Preview first, keeping the source:
+
+```bash
+jellyplex-sync import --copy --dry-run /mnt/staging /mnt/library/Jellyfin
 ```
 
 ### JSON output
