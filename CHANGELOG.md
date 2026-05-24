@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.2] - 2026-05-24
+
+### Fixed
+- **Sync summary "N files removed" is now recursively accurate** — pre-0.2.2 the counter did
+  `items_removed += 1` per entry, so tearing down a stray movie folder with 50 files inside
+  reported "1 files removed". The number now reflects the actual file count, both in real
+  runs and under `--dry-run`. Bonus from the underlying refactor: a single un-removable entry
+  (e.g. EACCES on a busy file) is logged and counted as an error instead of aborting the
+  whole sync — the rest of the tree is still cleaned up
+- **`diff` shows "In sync. No differences found." even when translation losses exist** — the
+  message was gated on `not result.drops`, so any library with `[remux]`/`[amazon]`/etc.
+  labels never saw the confirmation even when source and target were structurally identical.
+  Drops are informative (lossy translation), not sync problems; they continue to be reported
+  separately
+
+### Changed
+- **`diff` "Movies only in source" now shows the source folder name and the expected target
+  name** — previously only the expected target name was printed, which read as a curly-brace
+  entry "missing" from a square-bracket target when scanning the diff against the actual
+  source tree. Text output gains a second line per entry: `→ would be '<expected>'`. JSON
+  schema for `movies_only_in_source` becomes a list of `{source_folder, expected_target}`
+  objects instead of a list of strings — **breaking** for `--json` consumers reading that
+  field (the schema is still pre-1.0 and documented as unstable in the README)
+
 ## [0.2.1] - 2026-05-23
 
 ### Fixed
