@@ -197,7 +197,7 @@ wording on Jellyfin.
   `theme-music`, `backdrops` have no documented Plex equivalents.
   Translating Jellyfin → Plex, the safe fallback for all of these
   is `Other` (lossy — the specific category label is dropped). The
-  Reporter (Paket 1) should emit a `Drop` for the lost category.
+  Reporter emits a `Drop` for the lost category.
 
 ## Asymmetry of translation
 
@@ -229,9 +229,6 @@ Plex file with `[amazon]` survives a Plex → Plex sync but loses
 `[amazon]` after a hop through Jellyfin. This is fundamental to the
 model: Jellyfin has no place to put a free user label without confusing
 its scanner.
-
-When the migration mode (Paket 4) lands, this caveat needs to be
-called out prominently in user-facing documentation.
 
 ## Resolution label choices
 
@@ -289,14 +286,8 @@ Jellyfin's descending-by-resolution sort via the `p` suffix. The reason
 we don't switch is that existing user libraries already use the
 marketing labels (DVD/BD/4k) in their filenames, and any change would
 require either a breaking rename pass or a permanent dual mapping.
-Either is a 0.2.0+ topic that needs more thought before we touch it.
 
 ## Translation engine architecture
-
-> **Status:** target shape for Paket 1 (0.2.0). Not yet reflected in
-> code — today, `MediaLibrary` carries both reader and writer roles
-> and translation logic lives inside `jellyfin.py`. The refactor moves
-> things to match this shape without changing observable behavior.
 
 ### Pipeline
 
@@ -384,18 +375,7 @@ Concrete reporters for the three usable modes:
 |---|---|---|
 | lenient (default) | `LoggingReporter` | log each drop at warning level, continue |
 | strict | `StrictReporter` | raise on first drop |
-| report-only | `CollectingReporter` | accumulate drops for later inspection; used by `--diff` (Paket 4) |
-
-### Where today's code moves
-
-| Today | After Paket 1 |
-|---|---|
-| `MediaLibrary` (ABC, dual-role) | `LibraryReader`, `LibraryWriter` (split) |
-| `MovieInfo`, `VideoInfo` (library-specific fields) | generalised model in `model.py` |
-| `VariantParser` family in `jellyfin.py` (heuristic ` - X` split) | `JellyfinLibraryReader` |
-| variant rendering in `jellyfin.py` | `JellyfinLibraryWriter` |
-| `PlexLibrary.parse_*` and naming | `PlexLibraryReader` / `PlexLibraryWriter` |
-| `sync.py` orchestration | unchanged at the call-site level; Reader/Writer instances replace the dual-role library, Reporter is threaded through |
+| report-only | `CollectingReporter` | accumulate drops for later inspection; used by `--diff` |
 
 ## Edge cases worth remembering
 
@@ -409,14 +389,6 @@ Concrete reporters for the three usable modes:
 - **Multi-part + multi-version don't compose** on Jellyfin.
 - **Plex Editions need Plex Pass + Movie Agent v1.28.1+** — but this
   doesn't constrain us; we just write the filenames.
-
-## Living edge-case list
-
-Cases we encounter while building or testing, kept here so they don't
-get lost between sessions. Each entry should reference the test that
-covers it (or a TODO for one).
-
-- _(placeholder — fill during Paket 0 / future work)_
 
 ## Sources
 
