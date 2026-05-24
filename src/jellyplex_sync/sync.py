@@ -7,6 +7,7 @@ from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 
 from . import utils
+from .disambig import NaiveDisambiguator
 from .jellyfin import JellyfinLibraryReader, JellyfinLibraryWriter
 from .library import (
     ACCEPTED_VIDEO_SUFFIXES,
@@ -25,7 +26,9 @@ from .library import (
 )
 from .materializer import FileMaterializer, HardlinkMaterializer
 from .model import MovieInfo
+from .planner import Planner
 from .plex import PlexLibraryReader, PlexLibraryWriter
+from .realize import RealizeStats, Realizer
 
 log = logging.getLogger(__name__)
 
@@ -467,30 +470,55 @@ def sync(
 
     lib_stats = stats if stats is not None else LibraryStats()
 
-    for src, _, movie in scan_media_library(
-        source_reader,
-        target_writer,
+    # 0.3 pipeline: build the Plan, then apply it.
+    # NaiveDisambiguator preserves the pre-0.3 "movie skipped on video clash"
+    # reporting; the default switches to HashFallback in a later release.
+    planner = Planner(
+        reader=source_reader,
+        writer=target_writer,
+        disambiguator=NaiveDisambiguator(),
         reporter=reporter,
-        delete=delete,
-        dry_run=dry_run,
-        stats=lib_stats,
-    ):
-        s = process_movie(
-            source_reader,
-            target_writer,
-            src,
-            movie,
-            materializer=materializer,
-            reporter=reporter,
+    )
+    plan = planner.plan()
+
+    realize_stats = RealizeStats()
+    if plan.folder_clashes:
+        # Match pre-0.3 behaviour: log the clashes and skip the whole sync.
+        # Without this guard a partial sync could leave the target in a
+        # half-translated state when the user expected a hard failure.
+        for fc in plan.folder_clashes:
+            quoted = [f"'{s}'" for s in fc.source_folder_names]
+            log.error(
+                "Conflicting folders: %s → '%s'",
+                ", ".join(quoted),
+                fc.target_folder_name,
+            )
+        log.info("You have to solve the conflicts first to proceed")
+    else:
+        Realizer(materializer=materializer).apply(
+            plan,
+            dry_run=dry_run,
             delete=delete,
             verbose=verbose,
-            dry_run=dry_run,
+            stats=realize_stats,
         )
-        lib_stats.items_linked += s.asset_items_linked + s.videos_linked + s.loose_files_linked
-        lib_stats.movie_items_removed += s.asset_items_removed + s.items_removed
-        lib_stats.events.extend(s.events)
-        if s.clash is not None:
-            lib_stats.clashes.append(s.clash)
+
+    # Map plan + realize stats back onto the caller-visible LibraryStats.
+    # movies_total counts every candidate scanned, including clashing
+    # folders (which the planner already skipped).
+    folder_clash_count = sum(len(fc.source_folder_names) for fc in plan.folder_clashes)
+    lib_stats.movies_total += len(plan.movies) + folder_clash_count
+    lib_stats.movies_processed += realize_stats.movies_processed
+    lib_stats.items_linked += realize_stats.files_linked
+    # The legacy split items_removed vs movie_items_removed exists for
+    # historical reasons only — every consumer adds them back together.
+    # New code lands the whole total in items_removed; movie_items_removed
+    # stays at 0.
+    lib_stats.items_removed += realize_stats.files_removed
+    lib_stats.ignored.extend(plan.ignored)
+    lib_stats.strays_in_target.extend(realize_stats.strays_in_target)
+    lib_stats.events.extend(realize_stats.events)
+    lib_stats.clashes.extend(plan.clashes)
 
     total_removed = lib_stats.items_removed + lib_stats.movie_items_removed
     ignored_count = len(lib_stats.ignored)
