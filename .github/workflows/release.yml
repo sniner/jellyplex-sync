@@ -48,8 +48,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          # Full history is needed so `git describe` can find the previous
-          # v* tag and `git log` can walk the range for the release notes.
           fetch-depth: 0
 
       - name: Install uv
@@ -61,10 +59,6 @@ jobs:
         run: uv build
 
       - name: Generate release notes from commits between tags
-        # Release notes = full commit messages (subject + body) of every
-        # commit between the previous v* tag and this one, oldest first.
-        # Co-Authored-By trailers are stripped. Beats GitHub's default
-        # "Full Changelog" link with a real human-readable change list.
         run: |
           prev_tag=$(git describe --tags --abbrev=0 --match='v*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)
           if [ -n "$prev_tag" ]; then
@@ -88,3 +82,31 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
           body_path: release-notes.md
+
+  build-binary:
+    name: Build standalone Linux binary
+    runs-on: ubuntu-latest
+    needs: release
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build binary with PyInstaller
+        run: |
+          python3 -m venv .build-env
+          .build-env/bin/pip install -q . pyinstaller
+          echo 'from jellyplex_sync.cli.sync import main; main()' > _entry.py
+          .build-env/bin/pyinstaller --onefile --name jellyplex-sync-linux-x86_64 _entry.py
+
+      - name: Smoke-test the binary
+        run: |
+          ./dist/jellyplex-sync-linux-x86_64 --help
+          echo "Binary size: $(du -h dist/jellyplex-sync-linux-x86_64 | cut -f1)"
+
+      - name: Attach binary to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/jellyplex-sync-linux-x86_64
