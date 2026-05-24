@@ -375,7 +375,7 @@ Concrete reporters for the three usable modes:
 |---|---|---|
 | lenient (default) | `LoggingReporter` | log each drop at warning level, continue |
 | strict | `StrictReporter` | raise on first drop |
-| report-only | `CollectingReporter` | accumulate drops for later inspection; used by `--diff` |
+| report-only | `CollectingReporter` | accumulate drops for later inspection; used by the `diff` subcommand |
 
 ## Edge cases worth remembering
 

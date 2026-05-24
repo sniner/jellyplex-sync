@@ -98,7 +98,7 @@ class StrictReporter:
 @dataclass
 class CollectingReporter:
     """Accumulates drops and info messages for later inspection.
-    Used by report-only flows like the planned `--diff` mode."""
+    Used by report-only flows like the `diff` subcommand."""
 
     drops: list[Drop] = field(default_factory=list)
     messages: list[str] = field(default_factory=list)
