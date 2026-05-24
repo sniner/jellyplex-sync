@@ -161,7 +161,12 @@ class JellyfinLibraryWriter(_JellyfinBase):
         return " ".join(parts)
 
     def video_name(
-        self, movie: MovieInfo, video: VideoInfo, reporter: Reporter | None = None
+        self,
+        movie: MovieInfo,
+        video: VideoInfo,
+        reporter: Reporter | None = None,
+        *,
+        hash_suffix: str | None = None,
     ) -> str:
         reporter = reporter or LoggingReporter()
         base = self.movie_name(movie, reporter)
@@ -219,6 +224,13 @@ class JellyfinLibraryWriter(_JellyfinBase):
             label_parts.append(resolution_label)
         if edition:
             label_parts.append(edition)
+        if hash_suffix:
+            # Bracketed so the Jellyfin scanner doesn't try to interpret
+            # the hash as part of the version label, and so a Jellyfin→Plex
+            # round-trip stuffs it into an `{edition-...}` slot (visible,
+            # ugly, but it survives — matches the "always succeeds, even
+            # if it's not pretty" contract of the hash fallback).
+            label_parts.append(f"[{hash_suffix}]")
 
         if label_parts:
             return f"{base} - {' '.join(label_parts)}{video.extension}"

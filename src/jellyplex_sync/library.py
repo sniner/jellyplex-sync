@@ -135,7 +135,12 @@ class LibraryWriter(Protocol):
     def movie_name(self, movie: MovieInfo, reporter: Reporter) -> str: ...
 
     def video_name(
-        self, movie: MovieInfo, video: VideoInfo, reporter: Reporter
+        self,
+        movie: MovieInfo,
+        video: VideoInfo,
+        reporter: Reporter,
+        *,
+        hash_suffix: str | None = None,
     ) -> str: ...
 
 

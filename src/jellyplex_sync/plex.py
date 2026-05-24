@@ -90,7 +90,12 @@ class PlexLibraryWriter(_PlexBase):
         return " ".join(parts)
 
     def video_name(
-        self, movie: MovieInfo, video: VideoInfo, reporter: Reporter | None = None
+        self,
+        movie: MovieInfo,
+        video: VideoInfo,
+        reporter: Reporter | None = None,
+        *,
+        hash_suffix: str | None = None,
     ) -> str:
         reporter = reporter or LoggingReporter()
         parts = [self.movie_name(movie, reporter)]
@@ -106,4 +111,6 @@ class PlexLibraryWriter(_PlexBase):
         # express elsewhere.
         for label in video.labels:
             parts.append(f"[{label}]")
+        if hash_suffix:
+            parts.append(f"[{hash_suffix}]")
         return f"{' '.join(parts)}{video.extension}"
