@@ -7,7 +7,7 @@ import sys
 
 import jellyplex_sync as jp
 
-_SUBCOMMANDS = {"sync", "diff", "plan"}
+_SUBCOMMANDS = {"sync", "diff", "plan", "import"}
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -97,6 +97,39 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_io_args(plan_p)
 
+    import_p = sub.add_parser(
+        "import",
+        parents=[common],
+        help="Import video files from a staging area into a structured library.",
+    )
+    _add_io_args(import_p)
+    import_mode = import_p.add_mutually_exclusive_group()
+    import_mode.add_argument(
+        "--move",
+        dest="mode",
+        action="store_const",
+        const="move",
+        help="Move files: copy to target, then delete source (default).",
+    )
+    import_mode.add_argument(
+        "--copy",
+        dest="mode",
+        action="store_const",
+        const="copy",
+        help="Copy files; source is kept. On re-runs skip files whose size and mtime match.",
+    )
+    import_p.set_defaults(mode="move")
+    import_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done, don't change anything on disk.",
+    )
+    import_p.add_argument(
+        "--create",
+        action="store_true",
+        help="Create the target library directory if it doesn't exist.",
+    )
+
     return parser
 
 
@@ -165,6 +198,8 @@ def main() -> None:
         result = _do_diff(args)
     elif args.command == "plan":
         result = _do_plan(args)
+    elif args.command == "import":
+        result = _do_import(args)
     else:
         parser.error(f"unknown command: {args.command!r}")
         result = 2
@@ -262,6 +297,34 @@ def _do_plan(args: argparse.Namespace) -> int:
             source_format=args.source_format,
             target_format=args.target_format,
             as_json=args.json,
+        )
+    except KeyboardInterrupt:
+        logging.info("INTERRUPTED")
+        return 10
+    except Exception as exc:
+        logging.error("Exception: %s", exc)
+        return 99
+
+
+def _do_import(args: argparse.Namespace) -> int:
+    from jellyplex_sync.sync import import_media
+
+    if args.mode == "move":
+        materializer = jp.MoveMaterializer()
+    else:
+        materializer = jp.CopyMaterializer()
+
+    try:
+        return import_media(
+            args.source,
+            args.target,
+            dry_run=args.dry_run,
+            create=args.create,
+            verbose=args.verbose,
+            debug=args.debug,
+            source_format=args.source_format,
+            target_format=args.target_format,
+            materializer=materializer,
         )
     except KeyboardInterrupt:
         logging.info("INTERRUPTED")

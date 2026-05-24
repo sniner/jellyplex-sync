@@ -44,6 +44,7 @@ from .sync import (
     DiffEntry,
     DiffResult,
     diff,
+    import_media,
     plan,
     sync,
 )
@@ -82,6 +83,7 @@ __all__ = [
     "VideoInfo",
     "dedupe_drops",
     "diff",
+    "import_media",
     "plan",
     "sync",
 ]

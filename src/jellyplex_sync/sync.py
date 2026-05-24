@@ -19,7 +19,8 @@ from .library import (
     Reporter,
     dedupe_drops,
 )
-from .materializer import FileMaterializer, HardlinkMaterializer
+from .discover import FlatDiscoverer
+from .materializer import FileMaterializer, HardlinkMaterializer, MoveMaterializer
 from .planner import Planner
 from .plex import PlexLibraryReader, PlexLibraryWriter
 from .realize import Realizer, RealizeStats
@@ -575,3 +576,123 @@ def _print_plan(
 
 def _count_asset_files(asset) -> int:
     return len(asset.files) + sum(_count_asset_files(sf) for sf in asset.subfolders)
+
+
+# ---------------------------------------------------------------------------
+# import: move files from a staging area into a structured library
+# ---------------------------------------------------------------------------
+
+
+def import_media(
+    source: str,
+    target: str,
+    *,
+    dry_run: bool = False,
+    create: bool = False,
+    verbose: bool = False,
+    debug: bool = False,
+    source_format: str | None = None,
+    target_format: str | None = None,
+    reporter: Reporter | None = None,
+    materializer: FileMaterializer | None = None,
+    stats: LibraryStats | None = None,
+) -> int:
+    """Import video files from a staging area into a structured library.
+
+    Unlike `sync`, this uses `FlatDiscoverer` (groups by filename
+    parsing, not folder structure) and defaults to `MoveMaterializer`
+    (copy + delete source). The source can be a flat dump of video
+    files, a partially organised directory tree, or a mix.
+
+    Does not touch existing content in the target — it only adds.
+    """
+    if debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    reporter = reporter or LoggingReporter(verbose=verbose)
+    materializer = materializer or MoveMaterializer()
+    source_path = pathlib.Path(source)
+    target_path = pathlib.Path(target)
+
+    resolved = _resolve_formats(source_path, source_format, target_format)
+    if resolved is None:
+        return 1
+    source_short, target_short = resolved
+
+    source_reader_cls, _ = _LIBRARY_TYPES[source_short]
+    _, target_writer_cls = _LIBRARY_TYPES[target_short]
+    source_reader = source_reader_cls(source_path)
+    target_writer = target_writer_cls(target_path)
+
+    if dry_run:
+        log.info("SOURCE %s (staging)", source_reader.base_dir)
+        log.info("TARGET %s", target_writer.base_dir)
+        log.info("IMPORTING %s → %s", source_short.capitalize(), target_short.capitalize())
+    else:
+        log.info(
+            "Importing from '%s' (%s) into '%s' (%s)",
+            source_reader.base_dir,
+            source_short.capitalize(),
+            target_writer.base_dir,
+            target_short.capitalize(),
+        )
+
+    if not source_reader.base_dir.is_dir():
+        log.error("Source directory '%s' does not exist", source_reader.base_dir)
+        return 1
+
+    if not target_writer.base_dir.is_dir():
+        if create:
+            target_writer.base_dir.mkdir(parents=True)
+        else:
+            log.error("Target directory '%s' does not exist", target_writer.base_dir)
+            return 1
+
+    lib_stats = stats if stats is not None else LibraryStats()
+
+    planner = Planner(
+        reader=source_reader,
+        writer=target_writer,
+        discoverer=FlatDiscoverer(source_reader),
+        reporter=reporter,
+    )
+    plan = planner.plan()
+
+    realize_stats = RealizeStats()
+    Realizer(materializer=materializer).apply(
+        plan,
+        dry_run=dry_run,
+        delete=False,
+        verbose=verbose,
+        stats=realize_stats,
+    )
+
+    lib_stats.movies_total += len(plan.movies)
+    lib_stats.movies_processed += realize_stats.movies_processed
+    lib_stats.items_linked += realize_stats.files_linked
+    lib_stats.ignored.extend(plan.ignored)
+    lib_stats.events.extend(realize_stats.events)
+    lib_stats.clashes.extend(plan.clashes)
+
+    verb = "moved" if isinstance(materializer, MoveMaterializer) else "copied"
+    summary = (
+        f"Summary: {lib_stats.movies_processed} movies imported, "
+        f"{lib_stats.items_linked} files {verb}, "
+        f"{len(lib_stats.ignored)} ignored, "
+        f"{len(lib_stats.clashes)} skipped due to clash."
+    )
+    log.info(summary)
+
+    if lib_stats.ignored:
+        log.info("Ignored item(s) in source (not imported):")
+        for item in lib_stats.ignored:
+            log.info("  '%s' (%s)", item.path.name, item.reason)
+
+    if lib_stats.clashes:
+        log.warning(
+            "%d movie(s) skipped because two or more source files map to the "
+            "same target name. Rename and re-run.",
+            len(lib_stats.clashes),
+        )
+
+    return 0
