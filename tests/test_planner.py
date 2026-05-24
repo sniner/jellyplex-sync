@@ -10,7 +10,6 @@ import jellyplex_sync as jp
 from jellyplex_sync.disambig import (
     HashFallbackDisambiguator,
     NaiveDisambiguator,
-    _short_hash,
 )
 from jellyplex_sync.library import CollectingReporter
 from jellyplex_sync.planner import Planner

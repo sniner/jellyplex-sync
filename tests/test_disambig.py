@@ -13,7 +13,7 @@ from jellyplex_sync.disambig import (
     NaiveDisambiguator,
     _short_hash,
 )
-from jellyplex_sync.library import CollectingReporter, MovieClash
+from jellyplex_sync.library import CollectingReporter
 from jellyplex_sync.model import MovieInfo, VideoInfo
 
 
