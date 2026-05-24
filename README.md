@@ -2,7 +2,7 @@
 
 Can't decide between Jellyfin and Plex? This tool might help. It synchronizes your **movie library** between Jellyfin and Plex formats in **both directions** — without duplicating any files. Instead, it uses **hardlinks** to mirror your collection efficiently, saving storage while keeping both libraries in sync.
 
-> ⚠️ **0.2.0 is a major rewrite.** Subcommands, new materializer options, machine-readable `--json` output, default-sync-everything behavior, and a renamed model field (`tags` → `labels` in the Python API). If you depend on the old shape, **try the new version with `--dry-run` first**, and pin to a `0.1.x` release if anything looks off. See the [CHANGELOG](./CHANGELOG.md) for the full migration notes.
+> ⚠️ **0.3.0 is another major rewrite.** The internals are reorganised into a clean `discover → plan → realize` pipeline with an immutable Plan as a first-class concept. User-visible: a new **`plan` subcommand** that shows what a sync would do (text or `--json`) without touching anything, and **video-level clashes now auto-resolve with a hash suffix** instead of aborting the movie. The `sync` and `diff` CLI is unchanged. If you depend on the old shape, **try the new version with `--dry-run` first**. Cautious users can pin to a `0.2.x` (or even `0.1.x`) release until they're comfortable. See the [CHANGELOG](./CHANGELOG.md) for the full migration notes.
 
 ## Overview
 
@@ -46,10 +46,11 @@ docker build -t jellyplex-sync .
 
 ## Usage
 
-The CLI is split into two subcommands:
+The CLI is split into three subcommands:
 
 - **`sync`** — mirror a source library into the target layout (the historical operation; this is also the default if you omit the subcommand).
 - **`diff`** — read-only comparison of source and target. No filesystem changes. Useful before deleting your source after a migration.
+- **`plan`** — show the Plan a sync would execute (text or `--json`), without touching either side. Pre-flight check before sync, or machine-readable input for tooling.
 
 ### `sync`
 
@@ -126,22 +127,56 @@ Verify a target is a complete mirror before deleting the source:
 jellyplex-sync diff ~/Media/Jellyfin ~/Media/Plex
 ```
 
+### `plan`
+
+```bash
+jellyplex-sync plan [OPTIONS] /path/to/source/library /path/to/target/library
+```
+
+Shows the Plan a sync would execute — every movie folder, every translated video filename, every loose file, every asset subdirectory — without touching either filesystem. Useful as a pre-flight check ("will any movies clash? what gets translated?") or as a machine-readable input for tooling with `--json`.
+
+Unlike `sync` and `diff`, the target directory does **not** need to exist. The whole point of `plan` is to answer "what WOULD happen" *before* any setup.
+
+Exit codes:
+
+- `0` — Plan produced successfully. Clashes and translation losses are reported but counted as informational, not failures.
+- `2` — setup error (source missing, format undetectable).
+
+#### Example
+
+Pre-flight a sync, see exactly which target filenames would be created:
+
+```bash
+jellyplex-sync plan ~/Media/Plex ~/Media/Jellyfin
+```
+
+Machine-readable, with `jq` to find videos that needed disambiguation:
+
+```bash
+jellyplex-sync plan --json ~/Media/Plex ~/Media/Jellyfin \
+    | jq '.movies[].videos[] | select(.disambiguation) | {source, target_name, disambiguation}'
+```
+
 ### JSON output
 
-Both subcommands accept `--json` for machine-readable output. The document goes to **stdout**; logs continue to go to stderr. Under `--json`, INFO logs are suppressed unless you pass `--verbose` or `--debug`, so the output pipes cleanly into tools like `jq` without filtering.
+All three subcommands accept `--json` for machine-readable output. The document goes to **stdout**; logs continue to go to stderr. Under `--json`, INFO logs are suppressed unless you pass `--verbose` or `--debug`, so the output pipes cleanly into tools like `jq` without filtering.
 
 The schema (still evolving — pin a version when consuming):
 
-- `operation`: `"sync"` or `"diff"`.
-- `exit_code`: the process exit code, mirrored in the document for convenience.
+- `operation`: `"sync"`, `"diff"`, or `"plan"`.
+- `exit_code` (sync, diff): the process exit code, mirrored in the document for convenience.
 - `source` / `target`: `{path, format}` for each endpoint.
 - `dry_run` (sync only): whether the run was a preview.
-- `summary` (sync only): counters for `movies_total`, `movies_processed`, `files_updated`, `files_removed`, `items_ignored`, `strays_in_target`.
+- `summary`: counters; the set of fields depends on the operation.
+  - sync: `movies_total`, `movies_processed`, `files_updated`, `files_removed`, `items_ignored`, `strays_in_target`, `clashes`.
+  - plan: `movies`, `folder_clashes`, `movie_clashes`, `translation_losses`, `ignored`.
 - `ignored`: list of source-side entries the scanner skipped, each `{path, name, reason}`.
 - `strays_in_target` (sync only): list of names found in target that aren't in source.
 - `translation_losses`: distinct `{kind, key, value, reason}` tuples for labels/attributes the target format can't express. Deduplicated — one entry per distinct loss, not per affected file.
 - `events` (sync only): flat array of per-file actions, each `{action, target, source?, context?}`. Actions are `link`, `replace`, `skip`, `remove`. For `remove`, `context` is `library_stray` / `movie_stray` / `asset_stray`. Action names are the same in `--dry-run` and real runs; the top-level `dry_run` flag tells you which mode you were in.
+- `clashes` (sync only): movie-level video clashes the disambiguator couldn't resolve at all. Normally empty since the hash-fallback resolves the practical cases.
 - `diff`-specific fields: `movies_only_in_source`, `movies_only_in_target`, `differing_movies`, `in_sync`.
+- `plan`-specific fields: `movies` (each with `videos`, `loose_files`, `assets`), `folder_clashes`, `movie_clashes`. Videos that needed disambiguation carry a `disambiguation` sub-object (`{strategy, detail}`) — `strategy="hash_suffix"` for the auto-resolution case.
 
 #### `jq` examples
 
@@ -225,6 +260,8 @@ This helper can also be used on other NAS systems or Linux servers — schedule 
 - **Loose top-level files** — Sidecar files (`.nfo`, posters, external subtitles, plain notes) at the top of a movie folder are synced 1:1 by default since 0.2.0. Pre-0.2.0 they were silently dropped — which made the tool unsafe for migrations. Dot-files (`.DS_Store`, `.stversions`, …) stay excluded.
 - **Stray items** — With `--delete`, any file or folder in the target that has no counterpart in the source is removed. Without `--delete`, strays are still reported in the summary and the `--json` output, plus a warning at the end of the run points at `--delete`.
 - **Ignored items** — Entries the scanner couldn't classify (stray files at the library root, folders whose names don't parse) are reported in the summary and the `--json` `ignored` array. They are *not* carried over to the target — useful to verify before deleting the source.
+- **Video-level clashes auto-resolve** — When two source files would translate to the same target name (a common P→J outcome: `[1080p].mkv` and `[1080p] [remux].mkv` both collapse to `- BD.mkv`), a short hash of the source filename gets appended (e.g. `Movie - BD [a3f7c819].mkv`). Both files get synced; spot the hash in the `plan` output or in `--json` via the per-file `disambiguation` field. Pre-0.3 the whole movie was skipped on clash.
+- **Folder-level clashes still abort** — Two source folders mapping to the same target folder name (e.g. via dropped `[bracket]` labels) is a structural error in the source library, not something to silently merge. The run is stopped, the clashing folders are listed, and you're asked to rename one side.
 
 ## Library layouts
 
