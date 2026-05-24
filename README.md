@@ -287,7 +287,7 @@ Each movie must reside in its own folder, with optional subfolders for extras. D
 
 #### Special filename handling
 
-Jellyfin doesn't distinguish between editions (e.g., Director's Cut) and versions (e.g., 1080p vs. 4K). To work around this, I appended labels like "DVD", "BD", or "4K" to filenames in my personal library, ensuring the highest quality appears first and is selected by default in Jellyfin. Plex, on the other hand, supports editions natively and handles different versions via naming patterns and its internal version management. These specific labels are converted into Plex versions on the way over; other suffixes are treated as editions. The detailed mapping rules (and why DVD/BD/4k beats DVD/SDR/FHD/UHD despite the naming inconsistency) live in [DEV.md](./DEV.md).
+Jellyfin doesn't distinguish between editions (e.g., Director's Cut) and versions (e.g., 1080p vs. 4K). To work around this, I appended labels like "DVD", "BD", or "4K" to filenames in my personal library, ensuring the highest quality appears first and is selected by default in Jellyfin. Plex, on the other hand, supports editions natively and handles different versions via naming patterns and its internal version management. These specific labels are converted into Plex versions on the way over; other suffixes are treated as editions. The detailed mapping rules (and why DVD/BD/4k beats DVD/SDR/FHD/UHD despite the naming inconsistency) live in [SPECS.md](./SPECS.md).
 
 ### Plex
 
