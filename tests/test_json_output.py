@@ -13,7 +13,7 @@ from pathlib import Path
 import jellyplex_sync as jp
 from jellyplex_sync.json_output import write_diff_json, write_sync_json
 from jellyplex_sync.library import CollectingReporter, Drop, FileEvent, IgnoredEntry
-from jellyplex_sync.sync import DiffEntry, DiffResult, LibraryStats
+from jellyplex_sync.sync import DiffEntry, DiffResult, LibraryStats, MovieOnlyInSource
 
 
 def _touch(path: Path, content: bytes = b"") -> Path:
@@ -207,7 +207,12 @@ def test_diff_json_in_sync() -> None:
 
 def test_diff_json_with_differences(tmp_path: Path) -> None:
     result = DiffResult(
-        movies_only_in_source=("Foo (1990)",),
+        movies_only_in_source=(
+            MovieOnlyInSource(
+                source_folder="Foo (1990) {imdb-tt001}",
+                expected_target="Foo (1990) [imdbid-tt001]",
+            ),
+        ),
         movies_only_in_target=("Bar (1991)",),
         differing_movies=(
             DiffEntry(
@@ -233,7 +238,12 @@ def test_diff_json_with_differences(tmp_path: Path) -> None:
 
     assert payload["exit_code"] == 1
     assert payload["in_sync"] is False
-    assert payload["movies_only_in_source"] == ["Foo (1990)"]
+    assert payload["movies_only_in_source"] == [
+        {
+            "source_folder": "Foo (1990) {imdb-tt001}",
+            "expected_target": "Foo (1990) [imdbid-tt001]",
+        }
+    ]
     assert payload["movies_only_in_target"] == ["Bar (1991)"]
     assert payload["differing_movies"] == [
         {
@@ -266,7 +276,12 @@ def test_diff_as_json_emits_valid_json(tmp_path: Path) -> None:
     assert rc == 1
     payload = json.loads(buf.getvalue())
     assert payload["operation"] == "diff"
-    assert "First (1984) [imdbid-tt001]" in payload["movies_only_in_source"]
+    assert payload["movies_only_in_source"] == [
+        {
+            "source_folder": "First (1984) {imdb-tt001}",
+            "expected_target": "First (1984) [imdbid-tt001]",
+        }
+    ]
 
 
 def test_diff_as_json_does_not_print_text(tmp_path: Path) -> None:

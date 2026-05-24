@@ -547,8 +547,20 @@ class DiffEntry:
 
 
 @dataclass
+class MovieOnlyInSource:
+    """A source movie that has no counterpart in the target. Stores both
+    names so the diff output can show the user what they wrote (the
+    source folder) AND what it would become on the other side (the
+    expected target name) — pre-0.2.2 only the target name was shown,
+    which read as a stray for users browsing their source tree."""
+
+    source_folder: str
+    expected_target: str
+
+
+@dataclass
 class DiffResult:
-    movies_only_in_source: tuple[str, ...] = ()
+    movies_only_in_source: tuple[MovieOnlyInSource, ...] = ()
     movies_only_in_target: tuple[str, ...] = ()
     differing_movies: tuple[DiffEntry, ...] = ()
     drops: tuple = ()
@@ -621,8 +633,10 @@ def _compute_diff(source: LibraryReader, target: LibraryWriter) -> DiffResult:
     ignored: list[IgnoredEntry] = []
 
     expected: dict[str, set[str]] = {}
+    source_folder_for: dict[str, str] = {}
     for source_movie_path, movie in scan(source, ignored=ignored):
         target_movie_name = target.movie_name(movie, reporter)
+        source_folder_for[target_movie_name] = source_movie_path.name
         expected_files: set[str] = set()
         for entry in source_movie_path.glob("*"):
             if entry.name.startswith("."):
@@ -640,7 +654,13 @@ def _compute_diff(source: LibraryReader, target: LibraryWriter) -> DiffResult:
             continue
         actual[entry.name] = {sub.name for sub in entry.iterdir()}
 
-    only_source = sorted(set(expected) - set(actual))
+    only_source = tuple(
+        MovieOnlyInSource(
+            source_folder=source_folder_for[name],
+            expected_target=name,
+        )
+        for name in sorted(set(expected) - set(actual))
+    )
     only_target = sorted(set(actual) - set(expected))
     differing: list[DiffEntry] = []
     for name in sorted(set(expected) & set(actual)):
@@ -656,7 +676,7 @@ def _compute_diff(source: LibraryReader, target: LibraryWriter) -> DiffResult:
             )
 
     return DiffResult(
-        movies_only_in_source=tuple(only_source),
+        movies_only_in_source=only_source,
         movies_only_in_target=tuple(only_target),
         differing_movies=tuple(differing),
         drops=tuple(reporter.drops),
@@ -681,8 +701,9 @@ def _print_diff(
 
     if result.movies_only_in_source:
         print(f"Movies only in source ({len(result.movies_only_in_source)}):", file=out)
-        for name in result.movies_only_in_source:
-            print(f"  + {name}", file=out)
+        for m in result.movies_only_in_source:
+            print(f"  + '{m.source_folder}'", file=out)
+            print(f"      → would be '{m.expected_target}'", file=out)
         print(file=out)
 
     if result.movies_only_in_target:

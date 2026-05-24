@@ -116,7 +116,10 @@ def write_diff_json(
         "source": _endpoint_payload(source_path, source_format),
         "target": _endpoint_payload(target_path, target_format),
         "in_sync": not result.has_differences,
-        "movies_only_in_source": list(result.movies_only_in_source),
+        "movies_only_in_source": [
+            {"source_folder": m.source_folder, "expected_target": m.expected_target}
+            for m in result.movies_only_in_source
+        ],
         "movies_only_in_target": list(result.movies_only_in_target),
         "differing_movies": [
             {

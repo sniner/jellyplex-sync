@@ -52,6 +52,25 @@ def test_diff_returns_one_when_target_missing_movie(tmp_path: Path):
     assert "only in source" in buf.getvalue().lower()
 
 
+def test_diff_shows_source_folder_and_expected_target_name(tmp_path: Path):
+    """`Movies only in source` must surface the source folder name as
+    the primary identifier (that's what the user actually sees on disk)
+    AND the expected target name. Pre-0.2.2 only the target name was
+    printed, which read as a stray when browsing the source tree."""
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    _seed_source(src, ["First (1984) {imdb-tt001}"])
+    dst.mkdir()
+
+    buf = io.StringIO()
+    diff(str(src), str(dst), out=buf)
+    output = buf.getvalue()
+
+    # Plex source folder name (curly braces, imdb-) appears verbatim
+    assert "First (1984) {imdb-tt001}" in output
+    # Jellyfin expected target name (square brackets, imdbid-) also shown
+    assert "First (1984) [imdbid-tt001]" in output
+
+
 def test_diff_returns_one_when_target_has_stray(tmp_path: Path):
     src, dst = tmp_path / "src", tmp_path / "dst"
     _seed_source(src, ["First (1984) {imdb-tt001}"])
