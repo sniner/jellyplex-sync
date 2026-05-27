@@ -98,15 +98,15 @@ jobs:
         run: |
           python3 -m venv .build-env
           .build-env/bin/pip install -q . pyinstaller
-          echo 'from jellyplex_sync.cli.sync import main; main()' > _entry.py
-          .build-env/bin/pyinstaller --onefile --name jellyplex-sync-linux-x86_64 _entry.py
+          echo 'from jellyplex_sync.cli.main import main; main()' > _entry.py
+          .build-env/bin/pyinstaller --onefile --name jellyplex-linux-x86_64 _entry.py
 
       - name: Smoke-test the binary
         run: |
-          ./dist/jellyplex-sync-linux-x86_64 --help
-          echo "Binary size: $(du -h dist/jellyplex-sync-linux-x86_64 | cut -f1)"
+          ./dist/jellyplex-linux-x86_64 --help
+          echo "Binary size: $(du -h dist/jellyplex-linux-x86_64 | cut -f1)"
 
       - name: Attach binary to release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/jellyplex-sync-linux-x86_64
+          files: dist/jellyplex-linux-x86_64

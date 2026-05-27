@@ -2,7 +2,7 @@
 
 A `FileMaterializer` knows how to make a target path reflect a source path.
 The first (and currently only) implementation, `HardlinkMaterializer`, uses
-filesystem hardlinks — the behavior jellyplex-sync has always had. Copy
+filesystem hardlinks — the behavior this tool has always had. Copy
 backends arrive in a later step of Paket 4.
 
 The seam exists so the CLI can swap materialization strategies (`--copy`,

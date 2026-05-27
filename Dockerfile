@@ -13,4 +13,4 @@ WORKDIR /app
 COPY --from=builder /app/dist/*.whl /app/
 RUN pip install --no-cache-dir /app/*.whl
 
-ENTRYPOINT ["jellyplex-sync"]
+ENTRYPOINT ["jellyplex"]

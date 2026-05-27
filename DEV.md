@@ -1,6 +1,6 @@
 # Developer reference
 
-How `jellyplex-sync` is built — internal vocabulary, the pipeline
+How `jellyplex` is built — internal vocabulary, the pipeline
 architecture, and where to look when adding a new feature. For *what*
 the tool translates and the Plex/Jellyfin format details that motivate
 the translation rules, see [SPECS.md](./SPECS.md).

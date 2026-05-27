@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.4] - 2026-05-27
+
+### Added
+- **`jellyplex` CLI** — new primary entry point with explicit subcommands: `jellyplex sync`,
+  `jellyplex diff`, `jellyplex plan`, `jellyplex import`
+
+### Changed
+- **`jellyplex-sync`** is now a standalone convenience command that does exactly what
+  `jellyplex sync` does — same options, flat argument list, no subcommands. Existing scripts
+  and invocations continue to work unchanged
+- **Implicit `sync` subcommand removed** — the old behaviour of treating
+  `jellyplex-sync <source> <target>` as `jellyplex-sync sync <source> <target>` is gone.
+  `jellyplex-sync` no longer accepts subcommands; `jellyplex` always requires one
+- **Standalone Linux binary** renamed from `jellyplex-sync-linux-x86_64` to
+  `jellyplex-linux-x86_64` — it now provides the full CLI with all subcommands
+
 ## [0.3.3] - 2026-05-24
 
 ### Added

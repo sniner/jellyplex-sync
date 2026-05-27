@@ -28,7 +28,7 @@ The easiest way to install the CLI is via [uv](https://docs.astral.sh/uv/):
 uv tool install jellyplex-sync
 ```
 
-This places `jellyplex-sync` on your `PATH` in an isolated environment. `pipx install jellyplex-sync` works the same way if you prefer pipx.
+This places `jellyplex` and `jellyplex-sync` on your `PATH` in an isolated environment. `pipx install jellyplex-sync` works the same way if you prefer pipx.
 
 ### Docker
 
@@ -46,17 +46,19 @@ docker build -t jellyplex-sync .
 
 ## Usage
 
-The CLI is split into four subcommands:
+The main CLI is `jellyplex` with four subcommands:
 
-- **`sync`** — mirror a source library into the target layout (the historical operation; this is also the default if you omit the subcommand).
-- **`diff`** — read-only comparison of source and target. No filesystem changes. Useful before deleting your source after a migration.
-- **`plan`** — show the Plan a sync would execute (text or `--json`), without touching either side. Pre-flight check before sync, or machine-readable input for tooling.
-- **`import`** — **(experimental)** import video files from a staging area into a structured library. See below.
+- **`jellyplex sync`** — mirror a source library into the target layout.
+- **`jellyplex diff`** — read-only comparison of source and target. No filesystem changes. Useful before deleting your source after a migration.
+- **`jellyplex plan`** — show the Plan a sync would execute (text or `--json`), without touching either side. Pre-flight check before sync, or machine-readable input for tooling.
+- **`jellyplex import`** — **(experimental)** import video files from a staging area into a structured library. See below.
+
+For backward compatibility, `jellyplex-sync` is also installed as a standalone command that does exactly what `jellyplex sync` does — same options, no subcommand needed.
 
 ### `sync`
 
 ```bash
-jellyplex-sync sync [OPTIONS] /path/to/source/library /path/to/target/library
+jellyplex sync [OPTIONS] /path/to/source/library /path/to/target/library
 ```
 
 The first positional is the source library, the second is the target. By default the tool auto-detects whether the source is a Jellyfin or Plex layout and converts to the other format.
@@ -85,31 +87,31 @@ Use `--copy` when source and target are on different filesystems (NAS to local d
 Mirror a Jellyfin library into a new Plex structure:
 
 ```bash
-jellyplex-sync sync --create ~/Media/Jellyfin ~/Media/Plex
+jellyplex sync --create ~/Media/Jellyfin ~/Media/Plex
 ```
 
 Migration with cleanup (target becomes a clean mirror):
 
 ```bash
-jellyplex-sync sync --delete --create ~/Media/Jellyfin ~/Media/Plex
+jellyplex sync --delete --create ~/Media/Jellyfin ~/Media/Plex
 ```
 
 Cross-filesystem copy with safe re-runs:
 
 ```bash
-jellyplex-sync sync --copy --create /mnt/nas/Movies /mnt/local/Plex
+jellyplex sync --copy --create /mnt/nas/Movies /mnt/local/Plex
 ```
 
 Dry-run a verbose, full sync with deletion:
 
 ```bash
-jellyplex-sync sync --dry-run --verbose --delete --create ~/Media/Jellyfin ~/Media/Plex
+jellyplex sync --dry-run --verbose --delete --create ~/Media/Jellyfin ~/Media/Plex
 ```
 
 ### `diff`
 
 ```bash
-jellyplex-sync diff [OPTIONS] /path/to/source/library /path/to/target/library
+jellyplex diff [OPTIONS] /path/to/source/library /path/to/target/library
 ```
 
 Compares the two libraries without touching anything. Reports movies that exist only on one side, file-level differences inside shared movies, translation losses (Plex labels with no Jellyfin equivalent, for example), and entries the scanner ignored.
@@ -125,13 +127,13 @@ Exit codes follow the Unix `diff` convention:
 Verify a target is a complete mirror before deleting the source:
 
 ```bash
-jellyplex-sync diff ~/Media/Jellyfin ~/Media/Plex
+jellyplex diff ~/Media/Jellyfin ~/Media/Plex
 ```
 
 ### `plan`
 
 ```bash
-jellyplex-sync plan [OPTIONS] /path/to/source/library /path/to/target/library
+jellyplex plan [OPTIONS] /path/to/source/library /path/to/target/library
 ```
 
 Shows the Plan a sync would execute — every movie folder, every translated video filename, every loose file, every asset subdirectory — without touching either filesystem. Useful as a pre-flight check ("will any movies clash? what gets translated?") or as a machine-readable input for tooling with `--json`.
@@ -148,13 +150,13 @@ Exit codes:
 Pre-flight a sync, see exactly which target filenames would be created:
 
 ```bash
-jellyplex-sync plan ~/Media/Plex ~/Media/Jellyfin
+jellyplex plan ~/Media/Plex ~/Media/Jellyfin
 ```
 
 Machine-readable, with `jq` to find videos that needed disambiguation:
 
 ```bash
-jellyplex-sync plan --json ~/Media/Plex ~/Media/Jellyfin \
+jellyplex plan --json ~/Media/Plex ~/Media/Jellyfin \
     | jq '.movies[].videos[] | select(.disambiguation) | {source, target_name, disambiguation}'
 ```
 
@@ -163,7 +165,7 @@ jellyplex-sync plan --json ~/Media/Plex ~/Media/Jellyfin \
 > ⚠️ **This subcommand is experimental.** The exact behaviour may change in future releases as real-world use cases become clearer. Always start with `--dry-run`.
 
 ```bash
-jellyplex-sync import [OPTIONS] /path/to/staging /path/to/target/library
+jellyplex import [OPTIONS] /path/to/staging /path/to/target/library
 ```
 
 Imports video files from a staging area — a flat directory (or directory tree) where properly named video files have been dumped without the one-folder-per-movie structure that `sync` expects. Files are grouped by their parsed movie identity (title, year, provider ID) and placed into the correct movie folder in the target library.
@@ -192,13 +194,13 @@ Other flags: `--dry-run`, `--create`, `--source-format`, `--target-format`, `-v`
 Move Plex-named video files into a new Jellyfin library:
 
 ```bash
-jellyplex-sync import --create /mnt/staging /mnt/library/Jellyfin
+jellyplex import --create /mnt/staging /mnt/library/Jellyfin
 ```
 
 Preview first, keeping the source:
 
 ```bash
-jellyplex-sync import --copy --dry-run /mnt/staging /mnt/library/Jellyfin
+jellyplex import --copy --dry-run /mnt/staging /mnt/library/Jellyfin
 ```
 
 ### JSON output
@@ -227,39 +229,23 @@ The schema (still evolving — pin a version when consuming):
 Show every file that would be replaced (with full paths):
 
 ```bash
-jellyplex-sync sync --json --dry-run /src /dst \
+jellyplex sync --json --dry-run /src /dst \
     | jq '.events[] | select(.action == "replace") | {source, target}'
 ```
 
 Verify nothing important gets deleted before running a migration with `--delete`:
 
 ```bash
-jellyplex-sync sync --json --dry-run --delete /src /dst \
+jellyplex sync --json --dry-run --delete /src /dst \
     | jq '.events[] | select(.action == "remove")'
 ```
 
 Action distribution:
 
 ```bash
-jellyplex-sync sync --json --dry-run /src /dst \
+jellyplex sync --json --dry-run /src /dst \
     | jq '[.events[].action] | group_by(.) | map({action: .[0], count: length})'
 ```
-
-### Default subcommand
-
-For backward compatibility, omitting the subcommand is treated as an implicit `sync` (as long as the first argument is a positional, not a flag):
-
-```bash
-jellyplex-sync ~/Media/Jellyfin ~/Media/Plex
-```
-
-is equivalent to
-
-```bash
-jellyplex-sync sync ~/Media/Jellyfin ~/Media/Plex
-```
-
-If you start with a flag, you must spell out `sync` explicitly.
 
 ### Docker
 

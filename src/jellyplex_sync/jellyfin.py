@@ -125,7 +125,7 @@ class JellyfinLibraryWriter(_JellyfinBase):
             parts.append(f"[{key}id-{value}]")
 
         # Report any other provider IDs we couldn't fit; Jellyfin tolerates
-        # multiple bracket-IDs in the folder name, but jellyplex-sync only
+        # multiple bracket-IDs in the folder name, but jellyplex only
         # emits one for now.
         for key, value in movie.attributes.items():
             if primary and key == primary[0]:

@@ -1,6 +1,6 @@
 [project]
 name = "jellyplex-sync"
-version = "0.3.3"
+version = "0.3.4"
 description = "Convert your media library between Jellyfin and Plex formats by creating a hard-linked mirror"
 authors = [{ name = "Stefan Schönberger", email = "stefan@sniner.dev" }]
 requires-python = ">=3.11"
@@ -17,6 +17,7 @@ classifiers = [
 dependencies = []
 
 [project.scripts]
+jellyplex = "jellyplex_sync.cli.main:main"
 jellyplex-sync = "jellyplex_sync.cli.sync:main"
 
 [dependency-groups]
