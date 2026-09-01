@@ -67,11 +67,11 @@ def test_sync_delete_exits_3_on_failed_removal(tmp_path: Path) -> None:
 
     stats = LibraryStats()
     try:
-        rc = jp.sync(str(src), str(dst), delete=True, stats=stats)
+        result = jp.sync(str(src), str(dst), delete=True, stats=stats)
     finally:
         stray.chmod(0o755)
 
-    assert rc == 3
+    assert result.exit_code == 3
     assert stats.remove_errors >= 1
     # The rest of the sync still went through.
     assert stats.movies_processed == 1

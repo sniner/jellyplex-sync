@@ -46,6 +46,8 @@ from .plex import (
     PlexLibraryWriter,
 )
 from .sync import (
+    LibraryStats,
+    SyncResult,
     diff,
     import_media,
     plan,
@@ -71,6 +73,7 @@ __all__ = [
     "JellyfinLibraryReader",
     "JellyfinLibraryWriter",
     "LibraryReader",
+    "LibraryStats",
     "LibraryWriter",
     "LoggingReporter",
     "MovieClash",
@@ -84,6 +87,7 @@ __all__ = [
     "PlexLibraryWriter",
     "Reporter",
     "StrictReporter",
+    "SyncResult",
     "VideoInfo",
     "dedupe_drops",
     "diff",

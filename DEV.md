@@ -88,20 +88,24 @@ target filesystem.
 ```
 jellyplex_sync/
 ├── model.py         # MovieInfo, VideoInfo
-├── plan.py          # Plan IR — frozen dataclasses
+├── plan.py          # Plan IR — frozen dataclasses + collect_drops()
 ├── library.py       # LibraryReader / LibraryWriter Protocols, Reporter,
 │                    #   Drop, IgnoredEntry, MovieClash, FolderClash
+├── formats.py       # format registry + detection, resolve_endpoints()
 ├── plex.py          # PlexLibraryReader, PlexLibraryWriter
 ├── jellyfin.py      # JellyfinLibraryReader, JellyfinLibraryWriter
-├── discover.py      # SourceDiscoverer Protocol + TwoLevelDiscoverer
+├── discover.py      # SourceDiscoverer Protocol + TwoLevel / Flat impls
 ├── disambig.py      # Disambiguator Protocol + Naive / HashFallback impls
 ├── planner.py       # Planner: discover → interpret → name → disambiguate
 ├── realize.py       # Realizer + RealizeStats
-├── compare.py       # compare(plan) → DiffResult (read target, subtract from plan)
-├── materializer.py  # FileMaterializer impls: hardlink / copy / force-copy
+├── compare.py       # DiffResult model + compare(plan)
+├── materializer.py  # FileMaterializer impls: hardlink / copy / move
+├── sync.py          # use-case layer: sync / diff / plan / import_media
+├── report.py        # human-readable diff / plan text rendering
 ├── json_output.py   # sync / diff / plan JSON serialisation
 ├── utils.py         # remove() with dry-run prediction
-└── cli/sync.py      # argparse + subcommand dispatch
+├── cli/main.py      # jellyplex CLI: argparse + subcommand dispatch
+└── cli/sync.py      # legacy jellyplex-sync entry point (flat args)
 ```
 
 Each module has one verb: Discoverer finds, Reader interprets, Writer
@@ -457,11 +461,18 @@ import jellyplex_sync as jp
 
 # Top-level functions (the CLI thin-wraps these):
 jp.sync(source, target, *, dry_run, delete, create, source_format,
-        target_format, reporter, materializer, stats, ...) -> int
+        target_format, reporter, materializer, stats, ...) -> SyncResult
+jp.import_media(source, target, *, dry_run, create, source_format,
+        target_format, reporter, materializer, stats, ...) -> SyncResult
 jp.diff(source, target, *, source_format, target_format, out, as_json,
         ...) -> int
 jp.plan(source, target, *, source_format, target_format, out, as_json,
         ...) -> int
+
+# SyncResult: exit_code, resolved source/target formats, the run's
+# LibraryStats, and the Plan's translation losses — everything the CLI
+# needs, without re-resolving formats or threading accumulators in.
+jp.SyncResult, jp.LibraryStats
 
 # IR types — build, inspect, serialise:
 jp.Plan, jp.PlannedMovie, jp.PlannedFile, jp.PlannedAsset

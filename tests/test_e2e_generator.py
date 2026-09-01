@@ -51,8 +51,8 @@ def test_end_to_end_plex_to_jellyfin_produces_target(plex_source, tmp_path: Path
     dst = tmp_path / "jellyfin"
     dst.mkdir()
 
-    rc = jp.sync(str(src), str(dst))
-    assert rc == 0
+    result = jp.sync(str(src), str(dst))
+    assert result.exit_code == 0
 
     source_movie_dirs = sorted(p.name for p in src.iterdir() if p.is_dir())
     target_movie_dirs = sorted(p.name for p in dst.iterdir() if p.is_dir())
@@ -67,8 +67,8 @@ def test_end_to_end_videos_are_hardlinked_to_source(plex_source, tmp_path: Path)
     dst = tmp_path / "jellyfin"
     dst.mkdir()
 
-    rc = jp.sync(str(src), str(dst))
-    assert rc == 0
+    result = jp.sync(str(src), str(dst))
+    assert result.exit_code == 0
 
     source_videos = list(src.rglob("*.mkv"))
     target_videos = list(dst.rglob("*.mkv"))
@@ -91,9 +91,9 @@ def test_end_to_end_is_idempotent(plex_source, tmp_path: Path):
     dst = tmp_path / "jellyfin"
     dst.mkdir()
 
-    assert jp.sync(str(src), str(dst)) == 0
+    assert jp.sync(str(src), str(dst)).exit_code == 0
     snapshot = sorted(p.relative_to(dst).as_posix() for p in dst.rglob("*"))
-    assert jp.sync(str(src), str(dst)) == 0
+    assert jp.sync(str(src), str(dst)).exit_code == 0
     snapshot2 = sorted(p.relative_to(dst).as_posix() for p in dst.rglob("*"))
     assert snapshot == snapshot2, "second sync changed the target tree"
 

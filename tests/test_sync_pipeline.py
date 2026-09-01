@@ -30,8 +30,8 @@ def test_sync_links_one_movie_end_to_end(tmp_path: Path):
     movie.mkdir()
     _touch(movie / "Movie (2020) {imdb-tt001} [1080p].mkv", b"v")
 
-    rc = jp.sync(str(src), str(dst))
-    assert rc == 0
+    result = jp.sync(str(src), str(dst))
+    assert result.exit_code == 0
     assert (dst / "Movie (2020) [imdbid-tt001]" / "Movie (2020) [imdbid-tt001] - BD.mkv").is_file()
 
 
@@ -46,8 +46,8 @@ def test_sync_stats_match_pipeline(tmp_path: Path):
     _touch(src / "stray.txt", b"")
 
     stats = LibraryStats()
-    rc = jp.sync(str(src), str(dst), source_format="plex", stats=stats)
-    assert rc == 0
+    result = jp.sync(str(src), str(dst), source_format="plex", stats=stats)
+    assert result.exit_code == 0
     assert stats.movies_total == 2
     assert stats.movies_processed == 2
     assert stats.items_linked == 2
@@ -70,8 +70,8 @@ def test_sync_folder_clash_aborts_with_nonzero_exit(tmp_path: Path):
     _touch(b / "v.mkv", b"x")
 
     stats = LibraryStats()
-    rc = jp.sync(str(src), str(dst), source_format="plex", stats=stats)
-    assert rc == 2
+    result = jp.sync(str(src), str(dst), source_format="plex", stats=stats)
+    assert result.exit_code == 2
     assert stats.movies_processed == 0
     # Both folders are counted as candidates.
     assert stats.movies_total == 2
@@ -91,8 +91,8 @@ def test_sync_delete_removes_library_stray(tmp_path: Path):
     _touch(orphan / "junk.mkv", b"j")
 
     stats = LibraryStats()
-    rc = jp.sync(str(src), str(dst), delete=True, stats=stats)
-    assert rc == 0
+    result = jp.sync(str(src), str(dst), delete=True, stats=stats)
+    assert result.exit_code == 0
     assert not orphan.exists()
     # items_removed == 1 (one file inside one library stray).
     assert stats.items_removed == 1
@@ -107,12 +107,39 @@ def test_sync_dry_run_changes_nothing(tmp_path: Path):
     _touch(movie / "Movie (2020) {imdb-tt001}.mkv", b"v")
 
     stats = LibraryStats()
-    rc = jp.sync(str(src), str(dst), dry_run=True, stats=stats)
-    assert rc == 0
+    result = jp.sync(str(src), str(dst), dry_run=True, stats=stats)
+    assert result.exit_code == 0
     assert list(dst.iterdir()) == []
     # But the stats still record what would have happened.
     assert stats.movies_processed == 1
     assert stats.items_linked == 1
+
+
+def test_sync_result_carries_run_metadata(tmp_path: Path):
+    """SyncResult is the single return channel: exit code, resolved
+    formats, stats, and the plan's translation losses. The CLI reads
+    these instead of re-resolving formats (which re-walked the whole
+    source tree under --json) or passing accumulators in."""
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    movie = src / "Movie (2020) {imdb-tt001}"
+    movie.mkdir()
+    _touch(movie / "Movie (2020) {imdb-tt001} [1080p] [remux].mkv", b"v")
+
+    result = jp.sync(str(src), str(dst))
+    assert result.exit_code == 0
+    assert result.source_format == "plex"
+    assert result.target_format == "jellyfin"
+    assert result.stats.movies_processed == 1
+    assert any(d.value == "remux" for d in result.drops)
+
+
+def test_sync_result_on_setup_error_has_no_formats(tmp_path: Path):
+    result = jp.sync(str(tmp_path / "nope"), str(tmp_path))
+    assert result.exit_code == 1
+    assert result.source_format is None
+    assert result.target_format is None
 
 
 def test_sync_reporter_collects_drops(tmp_path: Path):

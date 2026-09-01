@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Breaking changes
+- **`jp.sync()` and `jp.import_media()` return a `SyncResult`** instead of a bare exit-code
+  int. Migrate `rc = jp.sync(...)` to `rc = jp.sync(...).exit_code`. The result also carries
+  the resolved source/target formats, the run's `LibraryStats`, and the translation losses —
+  so callers no longer need the `stats`/`reporter` in-out parameters (they still work).
+  The CLI commands and their exit codes are unchanged
 - **`Disambiguator` protocol** — `disambiguate()` no longer takes a `reporter` argument;
   translation losses now come back per video in `DisambiguationResult.drops`. Only affects
   custom disambiguator implementations; both built-in disambiguators are updated
@@ -17,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   the deduplicated top-level `translation_losses` list is unchanged
 - **`jp.NullReporter`** — a Reporter that discards everything, for callers that read
   translation losses from the Plan instead
+- **`jp.SyncResult` and `jp.LibraryStats`** exported at package level
 
 ### Changed
 - **`sync` exits with code 2 on a folder-level clash** — when two source folders map to the
@@ -24,6 +30,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   Scripts and cron jobs can now detect the failure. Exit codes are documented in the README
 
 ### Fixed
+- **`sync --json` no longer scans the source tree twice** — the CLI re-ran format
+  auto-detection (a full walk of the source library) just to label the JSON document; it now
+  reads the resolved formats from the run's result. Noticeable on large libraries
 - **Translation losses no longer double-reported** — a movie-level loss (e.g. a second
   provider ID) was reported once per video file on top of once per folder, inflating the
   `--verbose` log and the raw drop counts. Every loss is now recorded and reported exactly

@@ -23,8 +23,8 @@ def _seed_source(src: Path, movies: list[str]) -> None:
 def _seed_synced_target(src: Path, dst: Path) -> None:
     """Run a real sync once so source and target are aligned."""
     dst.mkdir(parents=True, exist_ok=True)
-    rc = jp.sync(str(src), str(dst))
-    assert rc == 0
+    result = jp.sync(str(src), str(dst))
+    assert result.exit_code == 0
 
 
 # ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ import pathlib
 import sys
 
 import jellyplex_sync as jp
+from jellyplex_sync.json_output import write_sync_json
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -127,14 +128,8 @@ def main() -> None:
     else:
         raise ValueError(f"unknown materialization mode: {args.mode!r}")
 
-    from jellyplex_sync.library import CollectingReporter
-    from jellyplex_sync.sync import LibraryStats
-
-    stats = LibraryStats() if args.json else None
-    reporter = CollectingReporter() if args.json else None
-
     try:
-        rc = jp.sync(
+        result = jp.sync(
             args.source,
             args.target,
             dry_run=args.dry_run,
@@ -145,8 +140,6 @@ def main() -> None:
             source_format=args.source_format,
             target_format=args.target_format,
             materializer=materializer,
-            reporter=reporter,
-            stats=stats,
         )
     except KeyboardInterrupt:
         logging.info("INTERRUPTED")
@@ -156,30 +149,19 @@ def main() -> None:
         sys.exit(99)
 
     if args.json:
-        assert stats is not None and reporter is not None
-        from jellyplex_sync.formats import _resolve_formats
-        from jellyplex_sync.json_output import write_sync_json
-
-        resolved = _resolve_formats(
-            pathlib.Path(args.source),
-            args.source_format,
-            args.target_format,
-        )
-        source_short, target_short = resolved if resolved else ("?", "?")
-
         write_sync_json(
             sys.stdout,
             source_path=pathlib.Path(args.source),
-            source_format=source_short,
+            source_format=result.source_format or "?",
             target_path=pathlib.Path(args.target),
-            target_format=target_short,
+            target_format=result.target_format or "?",
             dry_run=args.dry_run,
-            exit_code=rc,
-            stats=stats,
-            drops=reporter.drops,
+            exit_code=result.exit_code,
+            stats=result.stats,
+            drops=result.drops,
         )
 
-    sys.exit(rc)
+    sys.exit(result.exit_code)
 
 
 if __name__ == "__main__":

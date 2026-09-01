@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import argparse
 import logging
+import pathlib
 import sys
 
 import jellyplex_sync as jp
+from jellyplex_sync.json_output import write_sync_json
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -190,16 +192,9 @@ def main() -> None:
 
 
 def _do_sync(args: argparse.Namespace) -> int:
-    import pathlib
-
-    from jellyplex_sync.library import CollectingReporter
-    from jellyplex_sync.sync import LibraryStats
-
     materializer = _make_materializer(args.mode)
-    stats = LibraryStats() if args.json else None
-    reporter = CollectingReporter() if args.json else None
     try:
-        rc = jp.sync(
+        result = jp.sync(
             args.source,
             args.target,
             dry_run=args.dry_run,
@@ -210,8 +205,6 @@ def _do_sync(args: argparse.Namespace) -> int:
             source_format=args.source_format,
             target_format=args.target_format,
             materializer=materializer,
-            reporter=reporter,
-            stats=stats,
         )
     except KeyboardInterrupt:
         logging.info("INTERRUPTED")
@@ -221,29 +214,18 @@ def _do_sync(args: argparse.Namespace) -> int:
         return 99
 
     if args.json:
-        assert stats is not None and reporter is not None
-        from jellyplex_sync.formats import _resolve_formats
-        from jellyplex_sync.json_output import write_sync_json
-
-        resolved = _resolve_formats(
-            pathlib.Path(args.source),
-            args.source_format,
-            args.target_format,
-        )
-        source_short, target_short = resolved if resolved else ("?", "?")
-
         write_sync_json(
             sys.stdout,
             source_path=pathlib.Path(args.source),
-            source_format=source_short,
+            source_format=result.source_format or "?",
             target_path=pathlib.Path(args.target),
-            target_format=target_short,
+            target_format=result.target_format or "?",
             dry_run=args.dry_run,
-            exit_code=rc,
-            stats=stats,
-            drops=reporter.drops,
+            exit_code=result.exit_code,
+            stats=result.stats,
+            drops=result.drops,
         )
-    return rc
+    return result.exit_code
 
 
 def _make_materializer(mode: str) -> jp.FileMaterializer:
@@ -257,10 +239,8 @@ def _make_materializer(mode: str) -> jp.FileMaterializer:
 
 
 def _do_diff(args: argparse.Namespace) -> int:
-    from jellyplex_sync.sync import diff
-
     try:
-        return diff(
+        return jp.diff(
             args.source,
             args.target,
             debug=args.debug,
@@ -277,10 +257,8 @@ def _do_diff(args: argparse.Namespace) -> int:
 
 
 def _do_plan(args: argparse.Namespace) -> int:
-    from jellyplex_sync.sync import plan as plan_fn
-
     try:
-        return plan_fn(
+        return jp.plan(
             args.source,
             args.target,
             debug=args.debug,
@@ -297,12 +275,10 @@ def _do_plan(args: argparse.Namespace) -> int:
 
 
 def _do_import(args: argparse.Namespace) -> int:
-    from jellyplex_sync.sync import import_media
-
     materializer = jp.MoveMaterializer() if args.mode == "move" else jp.CopyMaterializer()
 
     try:
-        return import_media(
+        result = jp.import_media(
             args.source,
             args.target,
             dry_run=args.dry_run,
@@ -319,6 +295,7 @@ def _do_import(args: argparse.Namespace) -> int:
     except Exception as exc:
         logging.error("Exception: %s", exc)
         return 99
+    return result.exit_code
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ from .formats import guess_library_type as guess_library_type
 from .formats import resolve_endpoints
 from .json_output import write_diff_json, write_plan_json
 from .library import (
+    Drop,
     FileEvent,
     IgnoredEntry,
     LoggingReporter,
@@ -31,6 +32,7 @@ from .library import (
     Reporter,
 )
 from .materializer import FileMaterializer, HardlinkMaterializer, MoveMaterializer
+from .plan import collect_drops
 from .planner import Planner
 from .realize import Realizer, RealizeStats
 from .report import print_diff, print_plan
@@ -59,6 +61,22 @@ class LibraryStats:
     clashes: list[MovieClash] = field(default_factory=list)
 
 
+@dataclass
+class SyncResult:
+    """Outcome of one sync() or import_media() run.
+
+    `exit_code` is what the CLI exits with (0 ok, 1 setup error,
+    2 folder-clash abort, 3 removal errors — see the README). The
+    resolved formats are None when setup failed before resolution.
+    `drops` are the translation losses recorded in the Plan."""
+
+    exit_code: int
+    source_format: str | None = None
+    target_format: str | None = None
+    stats: LibraryStats = field(default_factory=LibraryStats)
+    drops: tuple[Drop, ...] = ()
+
+
 def sync(
     source: str,
     target: str,
@@ -73,7 +91,13 @@ def sync(
     reporter: Reporter | None = None,
     materializer: FileMaterializer | None = None,
     stats: LibraryStats | None = None,
-) -> int:
+) -> SyncResult:
+    """Mirror a source library into the target layout.
+
+    Returns a SyncResult; its `exit_code` is what the CLI exits with.
+    A caller-supplied `stats` object is filled in place and also
+    returned as `result.stats`.
+    """
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
@@ -81,10 +105,11 @@ def sync(
     materializer = materializer or HardlinkMaterializer()
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
+    lib_stats = stats if stats is not None else LibraryStats()
 
     endpoints = resolve_endpoints(source_path, target_path, source_format, target_format)
     if endpoints is None:
-        return _EXIT_SETUP_ERROR
+        return SyncResult(exit_code=_EXIT_SETUP_ERROR, stats=lib_stats)
     source_reader = endpoints.source_reader
     target_writer = endpoints.target_writer
     source_short = endpoints.source_format
@@ -108,9 +133,12 @@ def sync(
             target_writer.base_dir.mkdir(parents=True)
         else:
             log.error("Target directory '%s' does not exist", target_writer.base_dir)
-            return _EXIT_SETUP_ERROR
-
-    lib_stats = stats if stats is not None else LibraryStats()
+            return SyncResult(
+                exit_code=_EXIT_SETUP_ERROR,
+                source_format=source_short,
+                target_format=target_short,
+                stats=lib_stats,
+            )
 
     # 0.3 pipeline: build the Plan, then apply it. The Planner's default
     # HashFallbackDisambiguator auto-resolves video-level clashes by
@@ -211,7 +239,13 @@ def sync(
         if rc == _EXIT_OK:
             rc = _EXIT_REMOVE_ERRORS
 
-    return rc
+    return SyncResult(
+        exit_code=rc,
+        source_format=source_short,
+        target_format=target_short,
+        stats=lib_stats,
+        drops=collect_drops(plan),
+    )
 
 
 def diff(
@@ -335,7 +369,7 @@ def import_media(
     reporter: Reporter | None = None,
     materializer: FileMaterializer | None = None,
     stats: LibraryStats | None = None,
-) -> int:
+) -> SyncResult:
     """Import video files from a staging area into a structured library.
 
     Unlike `sync`, this uses `FlatDiscoverer` (groups by filename
@@ -344,6 +378,7 @@ def import_media(
     files, a partially organised directory tree, or a mix.
 
     Does not touch existing content in the target — it only adds.
+    Returns a SyncResult; its `exit_code` is what the CLI exits with.
     """
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -352,10 +387,11 @@ def import_media(
     materializer = materializer or MoveMaterializer()
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
+    lib_stats = stats if stats is not None else LibraryStats()
 
     endpoints = resolve_endpoints(source_path, target_path, source_format, target_format)
     if endpoints is None:
-        return _EXIT_SETUP_ERROR
+        return SyncResult(exit_code=_EXIT_SETUP_ERROR, stats=lib_stats)
     source_reader = endpoints.source_reader
     target_writer = endpoints.target_writer
     source_short = endpoints.source_format
@@ -379,9 +415,12 @@ def import_media(
             target_writer.base_dir.mkdir(parents=True)
         else:
             log.error("Target directory '%s' does not exist", target_writer.base_dir)
-            return _EXIT_SETUP_ERROR
-
-    lib_stats = stats if stats is not None else LibraryStats()
+            return SyncResult(
+                exit_code=_EXIT_SETUP_ERROR,
+                source_format=source_short,
+                target_format=target_short,
+                stats=lib_stats,
+            )
 
     planner = Planner(
         reader=source_reader,
@@ -428,4 +467,10 @@ def import_media(
             len(lib_stats.clashes),
         )
 
-    return _EXIT_OK
+    return SyncResult(
+        exit_code=_EXIT_OK,
+        source_format=source_short,
+        target_format=target_short,
+        stats=lib_stats,
+        drops=collect_drops(plan),
+    )

@@ -325,9 +325,10 @@ def test_sync_populates_caller_supplied_stats(tmp_path: Path) -> None:
 
     stats = LibraryStats()
     reporter = CollectingReporter()
-    rc = jp.sync(str(src), str(dst), stats=stats, reporter=reporter)
+    result = jp.sync(str(src), str(dst), stats=stats, reporter=reporter)
 
-    assert rc == 0
+    assert result.exit_code == 0
+    assert result.stats is stats
     assert stats.movies_total == 1
     assert stats.movies_processed == 1
     assert stats.items_linked == 1

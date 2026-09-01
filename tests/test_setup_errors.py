@@ -27,8 +27,8 @@ def test_sync_missing_source_reports_path_not_format(
     tmp_path: Path, dst: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     with caplog.at_level(logging.ERROR):
-        rc = jp.sync(str(tmp_path / "nope"), str(dst))
-    assert rc == 1
+        result = jp.sync(str(tmp_path / "nope"), str(dst))
+    assert result.exit_code == 1
     assert "does not exist" in caplog.text
     assert "determine source library type" not in caplog.text
 
@@ -39,8 +39,8 @@ def test_sync_source_is_a_file(
     bogus = tmp_path / "movie.mkv"
     bogus.write_bytes(b"x")
     with caplog.at_level(logging.ERROR):
-        rc = jp.sync(str(bogus), str(dst))
-    assert rc == 1
+        result = jp.sync(str(bogus), str(dst))
+    assert result.exit_code == 1
     assert "not a directory" in caplog.text
 
 
@@ -68,8 +68,8 @@ def test_import_missing_source_reports_path_not_format(
     tmp_path: Path, dst: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     with caplog.at_level(logging.ERROR):
-        rc = jp.import_media(str(tmp_path / "nope"), str(dst))
-    assert rc == 1
+        result = jp.import_media(str(tmp_path / "nope"), str(dst))
+    assert result.exit_code == 1
     assert "does not exist" in caplog.text
     assert "determine source library type" not in caplog.text
 
@@ -82,6 +82,6 @@ def test_sync_undetectable_format_still_reported(
     src = tmp_path / "src"
     src.mkdir()
     with caplog.at_level(logging.ERROR):
-        rc = jp.sync(str(src), str(dst))
-    assert rc == 1
+        result = jp.sync(str(src), str(dst))
+    assert result.exit_code == 1
     assert "determine source library type" in caplog.text
