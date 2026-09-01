@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.4.0] - 2026-09-01
 
 ### Breaking changes
 - **`jp.sync()` and `jp.import_media()` return a `SyncResult`** instead of a bare exit-code
