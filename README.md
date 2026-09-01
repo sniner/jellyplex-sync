@@ -230,7 +230,7 @@ The schema (still evolving — pin a version when consuming):
 - `events` (sync only): flat array of per-file actions, each `{action, target, source?, context?}`. Actions are `link`, `replace`, `skip`, `remove`. For `remove`, `context` is `library_stray` / `movie_stray` / `asset_stray`. Action names are the same in `--dry-run` and real runs; the top-level `dry_run` flag tells you which mode you were in.
 - `clashes` (sync only): movie-level video clashes the disambiguator couldn't resolve at all. Normally empty since the hash-fallback resolves the practical cases.
 - `diff`-specific fields: `movies_only_in_source`, `movies_only_in_target`, `differing_movies`, `in_sync`.
-- `plan`-specific fields: `movies` (each with `videos`, `loose_files`, `assets`), `folder_clashes`, `movie_clashes`. Videos that needed disambiguation carry a `disambiguation` sub-object (`{strategy, detail}`) — `strategy="hash_suffix"` for the auto-resolution case.
+- `plan`-specific fields: `movies` (each with `videos`, `loose_files`, `assets`), `folder_clashes`, `movie_clashes`. Videos that needed disambiguation carry a `disambiguation` sub-object (`{strategy, detail}`) — `strategy="hash_suffix"` for the auto-resolution case. Videos and movies that lose labels or attributes in translation carry their own `drops` / `folder_drops` lists (same `{kind, key, value, reason}` shape as `translation_losses`, but per file — so you can see which file loses what).
 
 #### `jq` examples
 

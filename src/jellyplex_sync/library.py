@@ -110,6 +110,18 @@ class CollectingReporter:
         self.messages.append(message)
 
 
+class NullReporter:
+    """Discards everything. For rendering steps whose losses are
+    recorded elsewhere — e.g. a Writer re-rendering a name whose drops
+    the Plan already carries."""
+
+    def drop(self, drop: Drop) -> None:
+        pass
+
+    def info(self, message: str) -> None:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Reader / Writer protocols
 # ---------------------------------------------------------------------------

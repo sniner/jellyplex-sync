@@ -5,9 +5,9 @@ the source would produce?" In the 0.3 pipeline this becomes trivially
 expressible: build the Plan (no I/O on target), then compare it to
 whatever currently sits on the target filesystem.
 
-`drops` is left empty by `compare()` — translation losses belong to
-the Planner run that built the Plan; the caller stitches them onto the
-DiffResult if they should appear in the report.
+`drops` come straight from the Plan — since the Plan records every
+translation loss on its PlannedFiles, the DiffResult can carry them
+without a side-channel to the Planner's reporter.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .library import Drop, IgnoredEntry
-from .plan import Plan
+from .plan import Plan, collect_drops
 
 
 @dataclass
@@ -106,5 +106,6 @@ def compare(plan: Plan) -> DiffResult:
         movies_only_in_source=only_in_source,
         movies_only_in_target=only_in_target,
         differing_movies=tuple(differing),
+        drops=collect_drops(plan),
         ignored=tuple(plan.ignored),
     )

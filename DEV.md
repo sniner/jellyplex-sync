@@ -165,6 +165,12 @@ nesting lives in the `PlannedAsset.subfolders` recursion — the
 realizer walks the tree and `mkdir(parents=True)` takes care of the
 intermediate directories.
 
+The Plan is self-contained about translation losses: folder-level
+drops sit on `PlannedMovie.folder_drops`, per-video drops on
+`PlannedFile.drops`, and `plan.collect_drops(plan)` flattens them in
+plan order. Output layers (report.py, json_output.py, compare.py) read
+losses from the Plan — there is no reporter side-channel to stitch.
+
 ## Intermediate model (`model.py`)
 
 ```python
@@ -224,6 +230,11 @@ unrecognised content into the generic model fields. The Writer takes a
 Reporter because it has to make lossy decisions (drop a label, collapse
 a provider ID set) and the caller needs to know about them.
 
+Each method reports only its own level: `movie_name` the folder-level
+drops, `video_name` the video-level ones. `video_name` renders the
+folder part internally with a `NullReporter`, so calling it never
+re-reports losses that belong to the folder name.
+
 `hash_suffix` is `None` for the common case. The `HashFallbackDisambiguator`
 passes a short identifier when collision resolution kicks in; each
 Writer chooses where the suffix lands in its target format (Plex: a
@@ -254,7 +265,8 @@ Three concrete reporters cover the usable modes:
 |---|---|---|
 | lenient (default) | `LoggingReporter` | log each drop, continue |
 | strict | `StrictReporter` | raise on first drop |
-| report-only | `CollectingReporter` | accumulate drops for later inspection; powers the `diff` and `plan` subcommands |
+| report-only | `CollectingReporter` | accumulate drops for later inspection |
+| silent | `NullReporter` | discard everything; for flows that read losses from the Plan (`diff`, `plan`) |
 
 ## Discoverer (`discover.py`)
 
@@ -292,7 +304,6 @@ class Disambiguator(Protocol):
         movie: MovieInfo,
         videos: list[tuple[VideoInfo, pathlib.Path]],
         writer: LibraryWriter,
-        reporter: Reporter,
         *,
         movie_folder: str,
     ) -> DisambiguationResult: ...
@@ -301,8 +312,14 @@ class Disambiguator(Protocol):
 class DisambiguationResult:
     names: dict[pathlib.Path, str]
     notes: dict[pathlib.Path, DisambiguationNote | None]
+    drops: dict[pathlib.Path, tuple[Drop, ...]] = field(default_factory=dict)
     unresolved: tuple[MovieClash, ...] = ()
 ```
+
+The disambiguator reports nothing itself — each accepted video's
+rendering losses come back in `drops`, keyed by source path, and the
+Planner records them on the PlannedFile. Sources that clash are absent
+from `names`, `notes`, and `drops` alike.
 
 Two implementations ship:
 
@@ -339,6 +356,11 @@ Pure (modulo Reader I/O for `parse_movie` / `parse_video`). Calling
 `plan()` twice with the same inputs produces equal Plans. That
 property is what makes plans diffable across runs and cacheable
 across phases.
+
+The `reporter` receives every Drop the Plan records — exactly once
+each, in plan order — so a `LoggingReporter` narrates losses live and
+a `StrictReporter` aborts on the first one. The Plan itself is the
+authoritative record (see Plan IR above).
 
 The Planner does:
 

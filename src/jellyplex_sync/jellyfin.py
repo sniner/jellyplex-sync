@@ -4,7 +4,7 @@ import logging
 import pathlib
 import re
 
-from .library import RESOLUTION_PATTERN, Drop, LoggingReporter, Reporter
+from .library import RESOLUTION_PATTERN, Drop, LoggingReporter, NullReporter, Reporter
 from .model import MovieInfo, VideoInfo
 
 log = logging.getLogger(__name__)
@@ -169,7 +169,10 @@ class JellyfinLibraryWriter(_JellyfinBase):
         hash_suffix: str | None = None,
     ) -> str:
         reporter = reporter or LoggingReporter()
-        base = self.movie_name(movie, reporter)
+        # Movie-level drops are movie_name's to report — re-reporting them
+        # here would count them once per video file instead of once per
+        # folder. The reporter passed in only sees video-level drops.
+        base = self.movie_name(movie, NullReporter())
 
         resolution_label: str | None = None
         for label in video.labels:

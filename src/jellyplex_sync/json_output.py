@@ -17,7 +17,7 @@ import pathlib
 from typing import TYPE_CHECKING, Any, TextIO
 
 from .library import Drop, FileEvent, FolderClash, IgnoredEntry, MovieClash, dedupe_drops
-from .plan import Plan, PlannedAsset, PlannedFile, PlannedMovie
+from .plan import Plan, PlannedAsset, PlannedFile, PlannedMovie, collect_drops
 
 if TYPE_CHECKING:
     from .compare import DiffResult
@@ -32,14 +32,15 @@ def _ignored_payload(entries: list[IgnoredEntry] | tuple[IgnoredEntry, ...]) -> 
     return [{"path": str(e.path), "name": e.path.name, "reason": e.reason} for e in entries]
 
 
+def _drop_payload(d: Drop) -> dict[str, Any]:
+    return {"kind": d.kind, "key": d.key, "value": d.value, "reason": d.reason}
+
+
 def _drops_payload(drops: tuple[Drop, ...] | list[Drop]) -> list[dict[str, Any]]:
     """Distinct drops only — same (kind, key, value, reason) collapses to
     one entry. The point is "what got lost", not the per-file frequency
-    (which the user can't map back to specific files from the list anyway)."""
-    return [
-        {"kind": d.kind, "key": d.key, "value": d.value, "reason": d.reason}
-        for d in dedupe_drops(list(drops))
-    ]
+    (the per-file view lives on the plan's videos)."""
+    return [_drop_payload(d) for d in dedupe_drops(list(drops))]
 
 
 def _clashes_payload(clashes: list[MovieClash]) -> list[dict[str, Any]]:
@@ -110,6 +111,8 @@ def _planned_file_payload(f: PlannedFile) -> dict[str, Any]:
         "source": str(f.source),
         "target_name": f.target_name,
     }
+    if f.drops:
+        payload["drops"] = [_drop_payload(d) for d in f.drops]
     if f.disambiguation is not None:
         payload["disambiguation"] = {
             "strategy": f.disambiguation.strategy,
@@ -128,7 +131,7 @@ def _planned_asset_payload(a: PlannedAsset) -> dict[str, Any]:
 
 
 def _planned_movie_payload(m: PlannedMovie) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "source_folder": m.source_path.name,
         "source_path": str(m.source_path),
         "target_folder": m.target_folder.name,
@@ -137,6 +140,9 @@ def _planned_movie_payload(m: PlannedMovie) -> dict[str, Any]:
         "loose_files": [_planned_file_payload(f) for f in m.loose_files],
         "assets": [_planned_asset_payload(a) for a in m.assets],
     }
+    if m.folder_drops:
+        payload["folder_drops"] = [_drop_payload(d) for d in m.folder_drops]
+    return payload
 
 
 def _folder_clashes_payload(clashes: tuple[FolderClash, ...]) -> list[dict[str, Any]]:
@@ -149,15 +155,11 @@ def _folder_clashes_payload(clashes: tuple[FolderClash, ...]) -> list[dict[str, 
     ]
 
 
-def write_plan_json(
-    out: TextIO,
-    plan: Plan,
-    *,
-    drops: tuple[Drop, ...] | list[Drop] = (),
-) -> None:
-    """Serialise a Plan to JSON. `drops` come from the reporter the
-    Planner was fed — they aren't on the Plan itself because they
-    belong to translation, not to the plan structure."""
+def write_plan_json(out: TextIO, plan: Plan) -> None:
+    """Serialise a Plan to JSON. The Plan is self-contained: the
+    translation losses come from its own per-movie and per-video drop
+    records — deduplicated at the top level, per-file on the videos."""
+    drops = collect_drops(plan)
     distinct_drops = dedupe_drops(list(drops))
     payload = {
         "operation": "plan",

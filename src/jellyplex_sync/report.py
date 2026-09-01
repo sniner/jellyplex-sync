@@ -11,7 +11,7 @@ from typing import TextIO
 
 from .compare import DiffResult
 from .library import Drop, dedupe_drops
-from .plan import Plan, PlannedAsset
+from .plan import Plan, PlannedAsset, collect_drops
 
 
 def print_diff(
@@ -64,7 +64,7 @@ def print_diff(
         print("In sync. No differences found.", file=out)
 
 
-def print_plan(plan: Plan, drops: tuple[Drop, ...], out: TextIO) -> None:
+def print_plan(plan: Plan, out: TextIO) -> None:
     print(
         f"Plan for source '{plan.source_root}' "
         f"({plan.source_format.capitalize()}) → target "
@@ -108,7 +108,7 @@ def print_plan(plan: Plan, drops: tuple[Drop, ...], out: TextIO) -> None:
             )
         print(file=out)
 
-    _print_drops(drops, out)
+    _print_drops(collect_drops(plan), out)
 
     if plan.ignored:
         print(f"Ignored in source ({len(plan.ignored)}):", file=out)

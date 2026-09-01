@@ -23,11 +23,11 @@ from .formats import guess_library_type as guess_library_type
 from .formats import resolve_endpoints
 from .json_output import write_diff_json, write_plan_json
 from .library import (
-    CollectingReporter,
     FileEvent,
     IgnoredEntry,
     LoggingReporter,
     MovieClash,
+    NullReporter,
     Reporter,
 )
 from .materializer import FileMaterializer, HardlinkMaterializer, MoveMaterializer
@@ -248,19 +248,16 @@ def diff(
         )
         return 2
 
-    # 0.3 pipeline: Planner.plan() + compare(plan). The reporter
-    # accumulates translation drops while the Planner walks the source;
-    # compare() doesn't observe drops (it only reads the target), so we
-    # stitch them onto the DiffResult afterwards.
-    reporter = CollectingReporter()
+    # 0.3 pipeline: Planner.plan() + compare(plan). The Plan records the
+    # translation drops itself, so compare() carries them into the
+    # DiffResult — no reporter side-channel needed.
     planner = Planner(
         reader=endpoints.source_reader,
         writer=endpoints.target_writer,
-        reporter=reporter,
+        reporter=NullReporter(),
     )
     plan = planner.plan()
     result = compare(plan)
-    result.drops = tuple(reporter.drops)
 
     if as_json:
         write_diff_json(
@@ -311,18 +308,17 @@ def plan(
     # The target dir doesn't need to exist for `plan` — the whole point
     # is to ask "what WOULD happen" before any sync sets up the target.
 
-    reporter = CollectingReporter()
     planner = Planner(
         reader=endpoints.source_reader,
         writer=endpoints.target_writer,
-        reporter=reporter,
+        reporter=NullReporter(),
     )
     built_plan = planner.plan()
 
     if as_json:
-        write_plan_json(out, built_plan, drops=tuple(reporter.drops))
+        write_plan_json(out, built_plan)
     else:
-        print_plan(built_plan, tuple(reporter.drops), out)
+        print_plan(built_plan, out)
     return 0
 
 

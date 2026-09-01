@@ -6,12 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Breaking changes
+- **`Disambiguator` protocol** — `disambiguate()` no longer takes a `reporter` argument;
+  translation losses now come back per video in `DisambiguationResult.drops`. Only affects
+  custom disambiguator implementations; both built-in disambiguators are updated
+
+### Added
+- **Per-file translation losses in `plan --json`** — each video that loses labels or
+  attributes in translation now carries its own `drops` list, each movie its `folder_drops`;
+  the deduplicated top-level `translation_losses` list is unchanged
+- **`jp.NullReporter`** — a Reporter that discards everything, for callers that read
+  translation losses from the Plan instead
+
 ### Changed
 - **`sync` exits with code 2 on a folder-level clash** — when two source folders map to the
   same target folder name, the run has always been aborted, but it reported success (exit 0).
   Scripts and cron jobs can now detect the failure. Exit codes are documented in the README
 
 ### Fixed
+- **Translation losses no longer double-reported** — a movie-level loss (e.g. a second
+  provider ID) was reported once per video file on top of once per folder, inflating the
+  `--verbose` log and the raw drop counts. Every loss is now recorded and reported exactly
+  once; the deduplicated lists in `diff`, `plan`, and `--json` output are unaffected
 - **Failed removals are no longer silent** — items that `--delete` could not remove
   (permissions, busy files) now show up in the end-of-run summary, in the `--json` document
   (`summary.remove_errors`), and in the exit code (3). Previously they were only log warnings

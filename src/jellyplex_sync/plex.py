@@ -4,7 +4,7 @@ import logging
 import pathlib
 import re
 
-from .library import LoggingReporter, Reporter
+from .library import NullReporter, Reporter
 from .model import MovieInfo, VideoInfo
 
 log = logging.getLogger(__name__)
@@ -97,8 +97,11 @@ class PlexLibraryWriter(_PlexBase):
         *,
         hash_suffix: str | None = None,
     ) -> str:
-        reporter = reporter or LoggingReporter()
-        parts = [self.movie_name(movie, reporter)]
+        # Same contract as the Jellyfin writer: movie-level drops belong to
+        # movie_name; video_name reports only video-level ones (of which
+        # Plex has none — it can express everything).
+        _ = reporter
+        parts = [self.movie_name(movie, NullReporter())]
         # Plex puts edition first among video attributes, then any others.
         if "edition" in video.attributes:
             parts.append(f"{{edition-{video.attributes['edition']}}}")

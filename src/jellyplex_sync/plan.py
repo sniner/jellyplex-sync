@@ -36,7 +36,9 @@ class PlannedFile:
     """A single file action: link `source` to `target_name` in the
     parent context (the movie folder for videos/loose files, the asset
     folder for asset files). `target_name` is a leaf name — never
-    contains a path separator."""
+    contains a path separator. `drops` are the translation losses of
+    rendering this name (filled for videos; loose files and assets
+    pass through untranslated)."""
 
     source: pathlib.Path
     target_name: str
@@ -99,3 +101,15 @@ class Plan:
     clashes: tuple[MovieClash, ...] = ()
     folder_clashes: tuple[FolderClash, ...] = ()
     protected_folders: tuple[str, ...] = ()
+
+
+def collect_drops(plan: Plan) -> tuple[Drop, ...]:
+    """Every Drop recorded in the Plan, in plan order: per movie the
+    folder drops first, then each video's drops. This is the same
+    sequence the Planner's reporter saw while the Plan was built."""
+    drops: list[Drop] = []
+    for movie in plan.movies:
+        drops.extend(movie.folder_drops)
+        for video in movie.videos:
+            drops.extend(video.drops)
+    return tuple(drops)

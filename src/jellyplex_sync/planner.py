@@ -24,6 +24,8 @@ from .disambig import (
 )
 from .discover import DiscoveredGroup, SourceDiscoverer, TwoLevelDiscoverer
 from .library import (
+    CollectingReporter,
+    Drop,
     FolderClash,
     IgnoredEntry,
     LibraryReader,
@@ -43,13 +45,20 @@ class _Candidate:
     source_path: pathlib.Path
     movie: MovieInfo
     group: DiscoveredGroup
+    folder_drops: tuple[Drop, ...] = ()
 
 
 class Planner:
     """Builds a Plan from a Reader/Writer pair and (optionally) a custom
     Discoverer or Disambiguator. Calling `plan()` twice with the same
     inputs produces equal Plans — the property that makes plans
-    diffable across runs and cacheable across phases."""
+    diffable across runs and cacheable across phases.
+
+    Translation losses are recorded in the Plan itself (`folder_drops`
+    per movie, `drops` per video). The `reporter` additionally receives
+    every recorded Drop as planning progresses — exactly once each, in
+    plan order — so LoggingReporter keeps narrating and StrictReporter
+    keeps aborting on the first loss."""
 
     def __init__(
         self,
@@ -97,6 +106,7 @@ class Planner:
             clashes.extend(movie_clashes)
             if pm is not None:
                 planned_movies.append(pm)
+                self._replay_drops(pm)
             else:
                 # The movie was skipped wholesale; an existing target
                 # folder of that name belongs to it, not to the strays.
@@ -134,9 +144,15 @@ class Planner:
                     IgnoredEntry(group.source_path, "unparseable folder name")
                 )
                 continue
-            target_name = self._writer.movie_name(movie, self._reporter)
+            collector = CollectingReporter()
+            target_name = self._writer.movie_name(movie, collector)
             grouped[target_name].append(
-                _Candidate(source_path=group.source_path, movie=movie, group=group)
+                _Candidate(
+                    source_path=group.source_path,
+                    movie=movie,
+                    group=group,
+                    folder_drops=tuple(collector.drops),
+                )
             )
         return grouped
 
@@ -154,7 +170,6 @@ class Planner:
                 candidate.movie,
                 videos_info,
                 self._writer,
-                self._reporter,
                 movie_folder=candidate.source_path.name,
             )
         else:
@@ -164,6 +179,7 @@ class Planner:
             PlannedFile(
                 source=source,
                 target_name=dis_result.names[source],
+                drops=dis_result.drops.get(source, ()),
                 disambiguation=dis_result.notes[source],
             )
             for _, source in videos_info
@@ -198,9 +214,19 @@ class Planner:
             videos=planned_videos,
             loose_files=planned_loose,
             assets=planned_assets,
+            folder_drops=candidate.folder_drops,
             protected_files=tuple(c.target_filename for c in dis_result.unresolved),
         )
         return pm, list(dis_result.unresolved)
+
+    def _replay_drops(self, pm: PlannedMovie) -> None:
+        """Forward the drops recorded on one PlannedMovie to the
+        reporter — the reporter sees exactly what the Plan records."""
+        for drop in pm.folder_drops:
+            self._reporter.drop(drop)
+        for pf in pm.videos:
+            for drop in pf.drops:
+                self._reporter.drop(drop)
 
     def _build_planned_asset(self, asset_dir: pathlib.Path) -> PlannedAsset:
         files: list[PlannedFile] = []
