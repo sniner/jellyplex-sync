@@ -7,14 +7,26 @@ requires-python = ">=3.11"
 readme = "README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
+keywords = ["plex", "jellyfin", "media-library", "movies", "sync", "hardlink", "mirror"]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Topic :: Multimedia :: Video",
 ]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/sniner/jellyplex-sync"
+Repository = "https://github.com/sniner/jellyplex-sync"
+Issues = "https://github.com/sniner/jellyplex-sync/issues"
+Changelog = "https://github.com/sniner/jellyplex-sync/blob/main/CHANGELOG.md"
 
 [project.scripts]
 jellyplex = "jellyplex_sync.cli.main:main"
@@ -24,13 +36,15 @@ jellyplex-sync = "jellyplex_sync.cli.sync:main"
 dev = [
     "pytest>=8.3.5,<9",
     "jellyplex-gen>=0.1.0",
+    "ruff>=0.15.5,<0.16",
+    "basedpyright>=1.38.2,<2",
 ]
 
 [tool.uv]
 default-groups = "all"
 
 [build-system]
-requires = ["uv_build>=0.10.4,<0.11.0"]
+requires = ["uv_build>=0.12,<0.13"]
 build-backend = "uv_build"
 
 [tool.pytest.ini_options]
