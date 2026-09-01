@@ -55,7 +55,7 @@ class Realizer:
             )
 
         stats = stats or RealizeStats()
-        stats.ignored_count = len(plan.ignored)
+        stats.ignored_count += len(plan.ignored)
 
         for movie in plan.movies:
             self._realize_movie(

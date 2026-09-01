@@ -90,7 +90,7 @@ def write_sync_json(
             "movies_total": stats.movies_total,
             "movies_processed": stats.movies_processed,
             "files_updated": stats.items_linked,
-            "files_removed": stats.items_removed + stats.movie_items_removed,
+            "files_removed": stats.items_removed,
             "remove_errors": stats.remove_errors,
             "items_ignored": len(stats.ignored),
             "strays_in_target": len(stats.strays_in_target),
@@ -189,10 +189,15 @@ def write_diff_json(
     target_format: str,
     source_path: pathlib.Path,
     target_path: pathlib.Path,
+    *,
+    exit_code: int,
 ) -> None:
+    """Serialise a DiffResult to JSON. `exit_code` is the code diff()
+    returns for this result — passed in (like write_sync_json) so the
+    exit-code rule lives in one place."""
     payload = {
         "operation": "diff",
-        "exit_code": 1 if result.has_differences else 0,
+        "exit_code": exit_code,
         "source": _endpoint_payload(source_path, source_format),
         "target": _endpoint_payload(target_path, target_format),
         "in_sync": not result.has_differences,

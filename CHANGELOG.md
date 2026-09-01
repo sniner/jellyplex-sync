@@ -38,6 +38,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `info` method keep working — the protocol simply no longer requires it
 - **Pre-0.3 leftovers** — the unused `library.scan()`, `library.movie_path()`,
   `library.video_path()` helpers and the `plan.Kind` alias (none were package-level exports)
+- **`LibraryStats.movie_items_removed`** — always 0 since the 0.3 pipeline; `files_removed`
+  in the JSON document simply equals `items_removed` now
 
 ### Changed
 - **`jellyplex-sync` is now a thin alias for `jellyplex sync`** — same options and behaviour,
@@ -47,6 +49,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   Scripts and cron jobs can now detect the failure. Exit codes are documented in the README
 
 ### Fixed
+- **Summary counts clash-skipped movies** — a movie dropped entirely because of an
+  unresolvable video-name clash now appears in the "X of Y movies synced" total, matching
+  the "skipped due to clash" line next to it
 - **Cross-filesystem hardlinks get a real error message** — hardlinking between two
   filesystems used to die with `Exception: [Errno 18] Invalid cross-device link` (exit 99).
   `sync` now says that source and target are on different filesystems, points at `--copy`,

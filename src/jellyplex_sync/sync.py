@@ -55,7 +55,6 @@ class LibraryStats:
     movies_processed: int = 0
     items_removed: int = 0
     items_linked: int = 0
-    movie_items_removed: int = 0
     remove_errors: int = 0
     ignored: list[IgnoredEntry] = field(default_factory=list)
     strays_in_target: list[str] = field(default_factory=list)
@@ -193,16 +192,18 @@ def sync(
             )
 
     # Map plan + realize stats back onto the caller-visible LibraryStats.
-    # movies_total counts every candidate scanned, including clashing
-    # folders (which the planner already skipped).
+    # movies_total counts every candidate scanned: planned movies, both
+    # sides of every folder clash, and movies the disambiguator dropped
+    # wholesale (present only as protected folders that aren't
+    # folder-clash targets).
     folder_clash_count = sum(len(fc.source_folder_names) for fc in plan.folder_clashes)
-    lib_stats.movies_total += len(plan.movies) + folder_clash_count
+    folder_clash_targets = {fc.target_folder_name for fc in plan.folder_clashes}
+    clash_skipped = sum(
+        1 for name in plan.protected_folders if name not in folder_clash_targets
+    )
+    lib_stats.movies_total += len(plan.movies) + folder_clash_count + clash_skipped
     lib_stats.movies_processed += realize_stats.movies_processed
     lib_stats.items_linked += realize_stats.files_linked
-    # The legacy split items_removed vs movie_items_removed exists for
-    # historical reasons only — every consumer adds them back together.
-    # New code lands the whole total in items_removed; movie_items_removed
-    # stays at 0.
     lib_stats.items_removed += realize_stats.files_removed
     lib_stats.remove_errors += realize_stats.remove_errors
     lib_stats.ignored.extend(plan.ignored)
@@ -210,17 +211,16 @@ def sync(
     lib_stats.events.extend(realize_stats.events)
     lib_stats.clashes.extend(plan.clashes)
 
-    total_removed = lib_stats.items_removed + lib_stats.movie_items_removed
     ignored_count = len(lib_stats.ignored)
     stray_count = len(lib_stats.strays_in_target)
     # Strays that were *kept* (only meaningful without --delete; with --delete
-    # they were removed and already counted in total_removed).
+    # they were removed and already counted in items_removed).
     strays_kept = stray_count if not delete else 0
 
     summary = (
         f"Summary: {lib_stats.movies_processed} of {lib_stats.movies_total} movies synced, "
         f"{lib_stats.items_linked} files updated, "
-        f"{total_removed} files removed, "
+        f"{lib_stats.items_removed} files removed, "
         f"{ignored_count} ignored, "
         f"{strays_kept} strays kept in target, "
         f"{len(lib_stats.clashes)} skipped due to clash."
@@ -305,6 +305,7 @@ def diff(
     )
     plan = planner.plan()
     result = compare(plan)
+    rc = 1 if result.has_differences else 0
 
     if as_json:
         write_diff_json(
@@ -314,6 +315,7 @@ def diff(
             endpoints.target_format,
             source_path,
             target_path,
+            exit_code=rc,
         )
     else:
         print_diff(
@@ -324,7 +326,7 @@ def diff(
             target_path,
             stream,
         )
-    return 1 if result.has_differences else 0
+    return rc
 
 
 def plan(

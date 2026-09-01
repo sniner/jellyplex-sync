@@ -32,8 +32,7 @@ def test_sync_json_has_full_schema(tmp_path: Path) -> None:
         movies_total=5,
         movies_processed=4,
         items_linked=10,
-        items_removed=2,
-        movie_items_removed=1,
+        items_removed=3,
         ignored=[IgnoredEntry(tmp_path / "stray.txt", "not a directory")],
     )
     drops = [Drop(kind="label", key=None, value="remux", reason="no Jellyfin equivalent")]
@@ -62,7 +61,7 @@ def test_sync_json_has_full_schema(tmp_path: Path) -> None:
         "movies_total": 5,
         "movies_processed": 4,
         "files_updated": 10,
-        "files_removed": 3,  # items_removed + movie_items_removed
+        "files_removed": 3,
         "remove_errors": 0,
         "items_ignored": 1,
         "strays_in_target": 0,
@@ -197,6 +196,7 @@ def test_diff_json_in_sync() -> None:
         target_format="jellyfin",
         source_path=Path("/src"),
         target_path=Path("/dst"),
+        exit_code=0,
     )
     payload = json.loads(buf.getvalue())
     assert payload["operation"] == "diff"
@@ -234,6 +234,7 @@ def test_diff_json_with_differences(tmp_path: Path) -> None:
         target_format="jellyfin",
         source_path=tmp_path,
         target_path=tmp_path,
+        exit_code=1,
     )
     payload = json.loads(buf.getvalue())
 

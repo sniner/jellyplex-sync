@@ -290,6 +290,17 @@ def test_stats_ignored_count_comes_from_plan(tmp_path):
     assert stats.ignored_count == 1
 
 
+def test_stats_ignored_count_accumulates_across_applies(tmp_path):
+    """Like every other counter, ignored_count adds up when the caller
+    reuses one stats object across apply() calls."""
+    source, target = _make_source_target(tmp_path)
+    (source / "junk-at-root.txt").write_text("x")
+    plan = _plan_from(source, target)
+    stats = Realizer().apply(plan)
+    Realizer().apply(plan, stats=stats)
+    assert stats.ignored_count == 2
+
+
 def test_caller_supplied_stats_is_reused(tmp_path):
     source, target = _make_source_target(tmp_path)
     movie = source / "Movie (2020)"
