@@ -37,6 +37,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   Scripts and cron jobs can now detect the failure. Exit codes are documented in the README
 
 ### Fixed
+- **`import --dry-run` now shows source deletions** — the default move strategy deletes each
+  source file after copying it (and when the target is already up to date), but the preview
+  never mentioned that. Dry-run now prints a `DELETE` line for every source it would remove;
+  in real runs the up-to-date cleanup is logged without needing `--verbose`
 - **`jellyplex import --json` is rejected instead of silently ignored** — the flag quieted
   the logs but produced no document, so the run looked dead. `import` no longer offers
   `--json` (it has no JSON output yet); passing it is now a usage error

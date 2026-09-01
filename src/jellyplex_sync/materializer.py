@@ -159,6 +159,10 @@ class MoveMaterializer:
 
     If the source no longer exists but the target does, the file is
     treated as already moved and silently skipped.
+
+    Under dry-run, every source deletion the real run would perform is
+    announced with a `DELETE <source>` line — the preview must not hide
+    the destructive half of a move.
     """
 
     name = "move"
@@ -183,20 +187,29 @@ class MoveMaterializer:
             return False
 
         if dst.exists() and _same_size_and_mtime(src, dst):
-            if verbose:
-                log.info("Target '%s' is up to date, removing source", dst.name)
             if events is not None:
                 events.append(FileEvent(action="skip", target=dst, source=src))
-            if not dry_run:
+            if dry_run:
+                log.info("DELETE %s", src)
+            else:
+                # A real deletion is worth a log line even without verbose.
+                log.info(
+                    "Target '%s' is up to date, removing source '%s'",
+                    dst.name,
+                    src.name,
+                )
                 src.unlink()
             return False
 
         result = _copy(
             src, dst, dry_run=dry_run, replaces_existing=dst.exists(), events=events
         )
-        if result and not dry_run:
-            src.unlink()
-            log.info("Removed source '%s'", src.name)
+        if result:
+            if dry_run:
+                log.info("DELETE %s", src)
+            else:
+                src.unlink()
+                log.info("Removed source '%s'", src.name)
         return result
 
 

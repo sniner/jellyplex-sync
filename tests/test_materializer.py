@@ -206,6 +206,37 @@ def test_move_dry_run_keeps_source(tmp_path: Path):
     assert not dst.exists()
 
 
+def test_move_dry_run_announces_source_deletion(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+):
+    """The preview must show the destructive half of a move: a DELETE
+    line for the source the real run would remove after copying."""
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = tmp_path / "dst.mkv"
+
+    with caplog.at_level(logging.INFO):
+        jp.MoveMaterializer().materialize(src, dst, dry_run=True)
+
+    assert src.exists()
+    assert f"DELETE {src}" in caplog.text
+
+
+def test_move_dry_run_announces_deletion_for_up_to_date_target(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+):
+    """Same for the skip path: a matching target still means the real
+    run would unlink the leftover source."""
+    src = _touch(tmp_path / "src.mkv", b"abc")
+    dst = _touch(tmp_path / "dst.mkv", b"abc")
+    os.utime(dst, (src.stat().st_atime, src.stat().st_mtime))
+
+    with caplog.at_level(logging.INFO):
+        assert jp.MoveMaterializer().materialize(src, dst, dry_run=True) is False
+
+    assert src.exists()
+    assert f"DELETE {src}" in caplog.text
+
+
 def test_move_records_link_event(tmp_path: Path):
     src = _touch(tmp_path / "src.mkv", b"abc")
     dst = tmp_path / "dst.mkv"
