@@ -87,6 +87,8 @@ Use `--copy` when source and target are on different filesystems (NAS to local d
 - `0` — sync completed (including "nothing to do").
 - `1` — setup error (missing directories, undecipherable format).
 - `2` — folder-level clash: the run was aborted, nothing was synced.
+- `3` — sync completed, but some items marked for removal could not be removed
+  (permissions, busy files); they remain in the target.
 
 #### Examples
 
@@ -220,7 +222,7 @@ The schema (still evolving — pin a version when consuming):
 - `source` / `target`: `{path, format}` for each endpoint.
 - `dry_run` (sync only): whether the run was a preview.
 - `summary`: counters; the set of fields depends on the operation.
-  - sync: `movies_total`, `movies_processed`, `files_updated`, `files_removed`, `items_ignored`, `strays_in_target`, `clashes`.
+  - sync: `movies_total`, `movies_processed`, `files_updated`, `files_removed`, `remove_errors`, `items_ignored`, `strays_in_target`, `clashes`.
   - plan: `movies`, `folder_clashes`, `movie_clashes`, `translation_losses`, `ignored`.
 - `ignored`: list of source-side entries the scanner skipped, each `{path, name, reason}`.
 - `strays_in_target` (sync only): list of names found in target that aren't in source.

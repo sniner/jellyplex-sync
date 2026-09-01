@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   Scripts and cron jobs can now detect the failure. Exit codes are documented in the README
 
 ### Fixed
+- **Failed removals are no longer silent** — items that `--delete` could not remove
+  (permissions, busy files) now show up in the end-of-run summary, in the `--json` document
+  (`summary.remove_errors`), and in the exit code (3). Previously they were only log warnings
+  and the run reported success
 - **Movies skipped due to a clash are now safe from `--delete`** — a movie the disambiguator
   could not resolve is excluded from the sync, but its previously synced target folder (or the
   clash-collapsed video name) counted as a stray and was deleted by `--delete`. Skipped now

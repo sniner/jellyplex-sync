@@ -55,6 +55,7 @@ class LibraryStats:
     items_removed: int = 0
     items_linked: int = 0
     movie_items_removed: int = 0
+    remove_errors: int = 0
     ignored: list[IgnoredEntry] = field(default_factory=list)
     strays_in_target: list[str] = field(default_factory=list)
     events: list[FileEvent] = field(default_factory=list)
@@ -252,6 +253,7 @@ def sync(
     # New code lands the whole total in items_removed; movie_items_removed
     # stays at 0.
     lib_stats.items_removed += realize_stats.files_removed
+    lib_stats.remove_errors += realize_stats.remove_errors
     lib_stats.ignored.extend(plan.ignored)
     lib_stats.strays_in_target.extend(realize_stats.strays_in_target)
     lib_stats.events.extend(realize_stats.events)
@@ -293,6 +295,15 @@ def sync(
             "labels). Rename one side and re-run.",
             len(lib_stats.clashes),
         )
+
+    if lib_stats.remove_errors:
+        log.warning(
+            "%d item(s) could not be removed and remain in the target — fix "
+            "what blocks them (see the warnings above) and re-run with --delete.",
+            lib_stats.remove_errors,
+        )
+        if rc == _EXIT_OK:
+            rc = _EXIT_REMOVE_ERRORS
 
     return rc
 

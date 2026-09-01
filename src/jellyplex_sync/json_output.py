@@ -89,6 +89,7 @@ def write_sync_json(
             "movies_processed": stats.movies_processed,
             "files_updated": stats.items_linked,
             "files_removed": stats.items_removed + stats.movie_items_removed,
+            "remove_errors": stats.remove_errors,
             "items_ignored": len(stats.ignored),
             "strays_in_target": len(stats.strays_in_target),
             "clashes": len(stats.clashes),

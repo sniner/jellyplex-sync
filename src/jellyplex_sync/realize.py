@@ -30,6 +30,7 @@ class RealizeStats:
     movies_processed: int = 0
     files_linked: int = 0
     files_removed: int = 0
+    remove_errors: int = 0
     ignored_count: int = 0
     strays_in_target: list[str] = field(default_factory=list)
     events: list[FileEvent] = field(default_factory=list)
@@ -224,6 +225,7 @@ class Realizer:
             log.info("Removing stray item '%s'", entry.name)
         result = utils.remove(entry, dry_run=dry_run)
         stats.files_removed += result.files
+        stats.remove_errors += result.errors
         stats.events.append(
             FileEvent(action="remove", target=entry, context=context)
         )

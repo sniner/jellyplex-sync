@@ -63,6 +63,7 @@ def test_sync_json_has_full_schema(tmp_path: Path) -> None:
         "movies_processed": 4,
         "files_updated": 10,
         "files_removed": 3,  # items_removed + movie_items_removed
+        "remove_errors": 0,
         "items_ignored": 1,
         "strays_in_target": 0,
         "clashes": 0,
