@@ -8,6 +8,7 @@ Text output lives in report.py, JSON in json_output.py.
 
 from __future__ import annotations
 
+import errno
 import logging
 import pathlib
 import sys
@@ -167,13 +168,32 @@ def sync(
         log.info("Nothing was synced. Rename one side of each conflict, then re-run")
         rc = _EXIT_FOLDER_CLASH
     else:
-        Realizer(materializer=materializer).apply(
-            plan,
-            dry_run=dry_run,
-            delete=delete,
-            verbose=verbose,
-            stats=realize_stats,
-        )
+        try:
+            Realizer(materializer=materializer).apply(
+                plan,
+                dry_run=dry_run,
+                delete=delete,
+                verbose=verbose,
+                stats=realize_stats,
+            )
+        except OSError as exc:
+            if exc.errno != errno.EXDEV:
+                raise
+            # Hardlinks cannot span filesystems — the most common
+            # misconfiguration this tool sees. Name the way out instead
+            # of surfacing the raw errno.
+            log.error(
+                "Cannot hardlink across filesystems: '%s' and '%s' are on "
+                "different filesystems — re-run with --copy",
+                source_reader.base_dir,
+                target_writer.base_dir,
+            )
+            return SyncResult(
+                exit_code=_EXIT_SETUP_ERROR,
+                source_format=source_short,
+                target_format=target_short,
+                stats=lib_stats,
+            )
 
     # Map plan + realize stats back onto the caller-visible LibraryStats.
     # movies_total counts every candidate scanned, including clashing

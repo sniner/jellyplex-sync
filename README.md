@@ -85,7 +85,8 @@ Use `--copy` when source and target are on different filesystems (NAS to local d
 #### Exit codes
 
 - `0` — sync completed (including "nothing to do").
-- `1` — setup error (missing directories, undecipherable format).
+- `1` — setup error (missing directories, undecipherable format, hardlinks across
+  filesystem boundaries).
 - `2` — folder-level clash: the run was aborted, nothing was synced.
 - `3` — sync completed, but some items marked for removal could not be removed
   (permissions, busy files); they remain in the target.

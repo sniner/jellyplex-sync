@@ -37,6 +37,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   Scripts and cron jobs can now detect the failure. Exit codes are documented in the README
 
 ### Fixed
+- **Cross-filesystem hardlinks get a real error message** — hardlinking between two
+  filesystems used to die with `Exception: [Errno 18] Invalid cross-device link` (exit 99).
+  `sync` now says that source and target are on different filesystems, points at `--copy`,
+  and exits with the setup-error code 1
 - **`import --dry-run` now shows source deletions** — the default move strategy deletes each
   source file after copying it (and when the target is already up to date), but the preview
   never mentioned that. Dry-run now prints a `DELETE` line for every source it would remove;
