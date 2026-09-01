@@ -42,6 +42,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   in the JSON document simply equals `items_removed` now
 
 ### Changed
+- **GitHub release notes now come from this changelog** — each release carries the
+  `CHANGELOG.md` section of its version instead of a concatenation of commit messages
 - **Developer docs moved to `docs/`** — `DEV.md` and `SPECS.md` now live in `docs/`;
   links from older release notes to the root files no longer resolve
 - **`jellyplex-sync` is now a thin alias for `jellyplex sync`** — same options and behaviour,
