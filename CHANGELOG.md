@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `jp.diff()`, `jp.plan()`, and `jp.import_media()` is gone; it mutated the root logger's
   level, overriding the host application's logging setup. Configure logging yourself (the
   CLI's `--debug` flag is unaffected — it always did this via `logging.basicConfig`)
+- **`LibraryReader` protocol gains `parse_movie_name(name: str)`** — the path-free parsing
+  entry point (movie identity from a bare folder/file basename). Custom readers must add it;
+  typically `parse_movie(path)` just delegates to `parse_movie_name(path.name)`, as the two
+  built-in readers now do
 - **`Disambiguator` protocol** — `disambiguate()` no longer takes a `reporter` argument;
   translation losses now come back per video in `DisambiguationResult.drops`. Only affects
   custom disambiguator implementations; both built-in disambiguators are updated

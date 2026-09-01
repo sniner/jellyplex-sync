@@ -58,7 +58,13 @@ class _JellyfinBase:
 
 class JellyfinLibraryReader(_JellyfinBase):
     def parse_movie(self, path: pathlib.Path) -> MovieInfo | None:
-        name = path.name
+        return self.parse_movie_name(path.name)
+
+    def parse_movie_name(self, name: str) -> MovieInfo | None:
+        """Parse a movie identity from a bare folder or file basename.
+
+        The path-free entry point: discoverers that group by filename
+        (FlatDiscoverer) call this without fabricating a path."""
         leftover = name
         attributes: dict[str, str] = {}
 

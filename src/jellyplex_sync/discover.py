@@ -30,12 +30,20 @@ class DiscoveredGroup:
     Planner adds an IgnoredEntry. Contents are pre-classified by the
     discoverer because future discoverers (e.g. MixedDiscoverer) need
     to inspect video files to decide group boundaries — putting the
-    classification here keeps that knowledge in one place."""
+    classification here keeps that knowledge in one place.
+
+    `movie` is the pre-parsed identity when the discoverer already had
+    to parse names to find the group boundaries (FlatDiscoverer); the
+    Planner then skips its own parse. None means "derive it from
+    `source_path`". For flat groups `source_path` is a synthetic label
+    (`<root>/<stem of the first file>`) used for display and clash
+    reporting — it does not exist on disk."""
 
     source_path: pathlib.Path
     video_files: tuple[pathlib.Path, ...] = ()
     asset_dirs: tuple[pathlib.Path, ...] = ()
     loose_files: tuple[pathlib.Path, ...] = ()
+    movie: MovieInfo | None = None
 
 
 class SourceDiscoverer(Protocol):
@@ -128,6 +136,7 @@ class FlatDiscoverer:
     ) -> Iterable[DiscoveredGroup]:
         groups: dict[tuple, list[pathlib.Path]] = {}
         source_paths: dict[tuple, pathlib.Path] = {}
+        movies: dict[tuple, MovieInfo] = {}
 
         for path in sorted(root.rglob("*")):
             if not path.is_file():
@@ -139,8 +148,7 @@ class FlatDiscoverer:
                     ignored.append(IgnoredEntry(path, "not a video file"))
                 continue
 
-            synthetic_folder = pathlib.Path(root / path.stem)
-            movie = self._reader.parse_movie(synthetic_folder)
+            movie = self._reader.parse_movie_name(path.stem)
             if movie is None:
                 if ignored is not None:
                     ignored.append(IgnoredEntry(path, "unparseable video filename"))
@@ -149,7 +157,10 @@ class FlatDiscoverer:
             key = _movie_key(movie)
             groups.setdefault(key, []).append(path)
             if key not in source_paths:
-                source_paths[key] = synthetic_folder
+                # Synthetic display path: the first file's stem under the
+                # root. Not on disk — see the DiscoveredGroup docstring.
+                source_paths[key] = root / path.stem
+                movies[key] = movie
 
         for key, video_files in groups.items():
             yield DiscoveredGroup(
@@ -157,4 +168,5 @@ class FlatDiscoverer:
                 video_files=tuple(sorted(video_files)),
                 asset_dirs=(),
                 loose_files=(),
+                movie=movies[key],
             )

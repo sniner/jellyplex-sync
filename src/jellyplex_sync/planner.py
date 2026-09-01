@@ -138,7 +138,14 @@ class Planner:
         folder name doesn't parse are added to `ignored`."""
         grouped: dict[str, list[_Candidate]] = defaultdict(list)
         for group in self._discoverer.discover(source_root, ignored=ignored):
-            movie = self._reader.parse_movie(group.source_path)
+            # A discoverer that parsed names to find group boundaries
+            # ships the identity with the group; only folder-based
+            # discovery leaves the parsing to us.
+            movie = (
+                group.movie
+                if group.movie is not None
+                else self._reader.parse_movie(group.source_path)
+            )
             if movie is None:
                 ignored.append(
                     IgnoredEntry(group.source_path, "unparseable folder name")

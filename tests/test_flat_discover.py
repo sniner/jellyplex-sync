@@ -164,6 +164,27 @@ def test_no_loose_files_or_assets(tmp_path, preader):
     assert groups[0].asset_dirs == ()
 
 
+def test_group_carries_parsed_movie(tmp_path, preader):
+    """The FlatDiscoverer parses each filename to find group boundaries;
+    the resulting identity ships with the group so the Planner doesn't
+    parse the same name a second time."""
+    _touch(tmp_path / "Movie (2020) {imdb-tt001} [1080p].mkv")
+    (group,) = FlatDiscoverer(preader).discover(tmp_path)
+    assert group.movie is not None
+    assert group.movie.title == "Movie"
+    assert group.movie.year == "2020"
+    assert group.movie.attributes == {"imdb": "tt001"}
+
+
+def test_parse_movie_name_matches_parse_movie(preader, jreader):
+    """parse_movie is a thin convenience over the path-free entry point."""
+    for reader, name in (
+        (preader, "Movie (2020) {imdb-tt001}"),
+        (jreader, "Movie (2020) [imdbid-tt001]"),
+    ):
+        assert reader.parse_movie_name(name) == reader.parse_movie(Path(name))
+
+
 def test_source_path_is_parseable_by_reader(tmp_path, preader):
     """The synthetic source_path must produce a valid MovieInfo when the
     Planner calls reader.parse_movie on it — that's the contract."""

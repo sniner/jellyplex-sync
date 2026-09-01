@@ -210,6 +210,7 @@ class LibraryReader(Protocol):
     def shortname(cls) -> str: ...
 
     def parse_movie(self, path: pathlib.Path) -> MovieInfo | None: ...
+    def parse_movie_name(self, name: str) -> MovieInfo | None: ...
     def parse_video(self, path: pathlib.Path) -> VideoInfo: ...
 
 class LibraryWriter(Protocol):
@@ -228,6 +229,10 @@ class LibraryWriter(Protocol):
         hash_suffix: str | None = None,
     ) -> str: ...
 ```
+
+`parse_movie` is a thin convenience over `parse_movie_name` — parsing
+works on bare names, so discoverers that group by filename call
+`parse_movie_name` directly instead of fabricating paths.
 
 The Reader has no Reporter — it accepts whatever's on disk and stuffs
 unrecognised content into the generic model fields. The Writer takes a
@@ -280,6 +285,7 @@ class DiscoveredGroup:
     video_files: tuple[pathlib.Path, ...] = ()
     asset_dirs: tuple[pathlib.Path, ...] = ()
     loose_files: tuple[pathlib.Path, ...] = ()
+    movie: MovieInfo | None = None    # pre-parsed identity (FlatDiscoverer)
 
 class SourceDiscoverer(Protocol):
     def discover(
