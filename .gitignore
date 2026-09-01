@@ -12,6 +12,8 @@ __pycache__
 
 /.env
 
+/sidecar/
+
 .DS_Store
 Thumbs.db
 *.log
