@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import pathlib
-import re
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
@@ -12,7 +11,6 @@ log = logging.getLogger(__name__)
 
 
 ACCEPTED_VIDEO_SUFFIXES = {".mkv", ".m4v"}
-RESOLUTION_PATTERN = re.compile(r"\d{3,4}[pi]$")
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +189,11 @@ class FileEvent:
     `source` is None for `remove` (no source — the file is being deleted).
     `context` is set only for `remove` to say which scope the stray came
     from: "library_stray" | "movie_stray" | "asset_stray".
+
+    `action="link"` covers every creation, copies included — the verb is
+    part of the stable JSON schema, so it stays materializer-neutral in
+    meaning even though it reads hardlink-flavoured. A rename (e.g. to
+    "create") waits for the next deliberate schema break.
     """
 
     action: str  # "link" | "replace" | "skip" | "remove"

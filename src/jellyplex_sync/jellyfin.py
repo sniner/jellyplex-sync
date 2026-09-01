@@ -4,10 +4,13 @@ import logging
 import pathlib
 import re
 
-from .library import RESOLUTION_PATTERN, Drop, LoggingReporter, NullReporter, Reporter
+from .library import Drop, LoggingReporter, NullReporter, Reporter
 from .model import MovieInfo, VideoInfo
 
 log = logging.getLogger(__name__)
+
+# Anything shaped like a broadcast resolution ("1080p", "576i", ...).
+_RESOLUTION_PATTERN = re.compile(r"\d{3,4}[pi]$")
 
 
 _JELLYFIN_ID_BLOCK = re.compile(r"(\[(?P<key>[a-zA-Z]+id)-(?P<value>[^\]]+)\])")
@@ -69,9 +72,7 @@ class JellyfinLibraryReader(_JellyfinBase):
         attributes: dict[str, str] = {}
 
         for blk, key, value in _JELLYFIN_ID_BLOCK.findall(name):
-            provider = key.lower()
-            if provider.endswith("id"):
-                provider = provider[:-2]
+            provider = key.lower().removesuffix("id")
             if provider in _JELLYFIN_PROVIDERS:
                 attributes[provider] = value
             leftover = leftover.replace(blk, "")
@@ -185,7 +186,7 @@ class JellyfinLibraryWriter(_JellyfinBase):
             shorthand = _CANONICAL_TO_SHORTHAND.get(label) or _CANONICAL_TO_SHORTHAND.get(
                 label.upper()
             )
-            if shorthand is None and RESOLUTION_PATTERN.match(label):
+            if shorthand is None and _RESOLUTION_PATTERN.match(label):
                 # Off-standard but resolution-shaped (e.g. "570i" from a
                 # non-NTSC film transfer). Pass through verbatim — better
                 # a slightly off label than silently lost user data.
@@ -274,7 +275,7 @@ def _to_canonical_resolution(word: str) -> str | None:
     lower = word.lower()
     if lower in _SHORTHAND_TO_CANONICAL:
         return _SHORTHAND_TO_CANONICAL[lower]
-    if RESOLUTION_PATTERN.match(word):
+    if _RESOLUTION_PATTERN.match(word):
         return word
     return None
 

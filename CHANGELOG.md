@@ -49,6 +49,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   Scripts and cron jobs can now detect the failure. Exit codes are documented in the README
 
 ### Fixed
+- **`--debug` shows tracebacks for unexpected errors** — the CLI's catch-all handler logged
+  only the exception message, leaving nothing to debug with even at debug level. With
+  `--debug` the full traceback is now included
 - **Summary counts clash-skipped movies** — a movie dropped entirely because of an
   unresolvable video-name clash now appears in the "X of Y movies synced" total, matching
   the "skipped due to clash" line next to it

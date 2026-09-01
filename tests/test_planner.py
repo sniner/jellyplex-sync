@@ -94,7 +94,7 @@ def test_simple_plex_movie_planned_to_jellyfin(tmp_path):
 
 
 def test_loose_files_pass_through_unchanged(tmp_path):
-    planner, source, target = _make_planner(tmp_path)
+    planner, source, _target = _make_planner(tmp_path)
     movie = source / "Movie (2020)"
     movie.mkdir()
     (movie / "Movie (2020).mkv").write_text("v")
@@ -107,7 +107,7 @@ def test_loose_files_pass_through_unchanged(tmp_path):
 
 
 def test_assets_recurse(tmp_path):
-    planner, source, target = _make_planner(tmp_path)
+    planner, source, _target = _make_planner(tmp_path)
     movie = source / "Movie (2020)"
     movie.mkdir()
     (movie / "Movie (2020).mkv").write_text("v")
@@ -134,7 +134,7 @@ def test_assets_recurse(tmp_path):
 
 
 def test_top_level_file_becomes_ignored(tmp_path):
-    planner, source, target = _make_planner(tmp_path)
+    planner, source, _target = _make_planner(tmp_path)
     (source / "loose-junk.txt").write_text("j")
     plan = planner.plan()
     assert plan.movies == ()
@@ -161,7 +161,7 @@ def test_unparseable_folder_becomes_ignored(tmp_path):
 def test_two_folders_collapsing_to_one_target_folder_clash(tmp_path):
     """Two Plex folders that differ only in a bracket label (which the
     Jellyfin writer drops) collapse to the same Jellyfin folder name."""
-    planner, source, target = _make_planner(tmp_path)
+    planner, source, _target = _make_planner(tmp_path)
     a = source / "Movie (2020) {imdb-tt0000001} [Director's Cut]"
     b = source / "Movie (2020) {imdb-tt0000001} [Theatrical]"
     a.mkdir()
@@ -182,7 +182,7 @@ def test_two_folders_collapsing_to_one_target_folder_clash(tmp_path):
 
 
 def test_naive_disambiguator_records_movie_clash(tmp_path):
-    planner, source, target = _make_planner(
+    planner, source, _target = _make_planner(
         tmp_path, disambiguator=NaiveDisambiguator()
     )
     movie = source / "Movie (2020)"
@@ -197,7 +197,7 @@ def test_naive_disambiguator_records_movie_clash(tmp_path):
 
 
 def test_hash_fallback_resolves_clash_into_planned_movie(tmp_path):
-    planner, source, target = _make_planner(
+    planner, source, _target = _make_planner(
         tmp_path, disambiguator=HashFallbackDisambiguator()
     )
     movie = source / "Movie (2020)"
@@ -218,7 +218,7 @@ def test_hash_fallback_resolves_clash_into_planned_movie(tmp_path):
 
 
 def test_hash_fallback_unaffected_videos_have_no_note(tmp_path):
-    planner, source, target = _make_planner(
+    planner, source, _target = _make_planner(
         tmp_path, disambiguator=HashFallbackDisambiguator()
     )
     movie = source / "Movie (2020)"
@@ -236,7 +236,7 @@ def test_hash_fallback_unaffected_videos_have_no_note(tmp_path):
 
 
 def test_plan_is_reproducible_across_runs(tmp_path):
-    planner, source, target = _make_planner(tmp_path)
+    planner, source, _target = _make_planner(tmp_path)
     for name in ["Movie A (2020)", "Movie B (2021)", "Movie C (2019)"]:
         d = source / name
         d.mkdir()

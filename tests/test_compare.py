@@ -53,7 +53,7 @@ def test_after_realize_in_sync(tmp_path):
 
 
 def test_unrealized_movie_is_only_in_source(tmp_path):
-    source, target, planner = _setup(tmp_path)
+    source, _target, planner = _setup(tmp_path)
     movie = source / "Das Boot (1981) {imdb-tt0082096}"
     movie.mkdir()
     (movie / "Das Boot (1981) {imdb-tt0082096}.mkv").write_text("v")

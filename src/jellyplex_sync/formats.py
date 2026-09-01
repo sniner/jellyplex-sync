@@ -81,8 +81,13 @@ def _resolve_formats(
 
     Either side may be "auto" (or None): the source is then sniffed from disk,
     and the target defaults to the opposite of the source. Both sides explicit
-    with the same value is the lint/normalize mode. Returns None and logs an
-    error if a needed format can't be determined.
+    with the same value is the lint/normalize mode.
+
+    Two error channels, deliberately distinct: an explicit format string that
+    names no known format raises ValueError — that is a caller bug (the CLI
+    can't produce it, argparse restricts the choices). An undetectable
+    on-disk layout returns None after logging — that is an environment
+    condition the caller handles as a setup error.
     """
     src = source_format if source_format and source_format != "auto" else None
     tgt = target_format if target_format and target_format != "auto" else None

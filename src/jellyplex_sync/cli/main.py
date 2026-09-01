@@ -1,4 +1,3 @@
-#!/usr/bin/python3
 from __future__ import annotations
 
 import argparse
@@ -8,6 +7,8 @@ import sys
 
 import jellyplex_sync as jp
 from jellyplex_sync.json_output import write_sync_json
+
+log = logging.getLogger(__name__)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -212,10 +213,12 @@ def _do_sync(args: argparse.Namespace) -> int:
             materializer=materializer,
         )
     except KeyboardInterrupt:
-        logging.info("INTERRUPTED")
+        log.info("INTERRUPTED")
         return 10
     except Exception as exc:
-        logging.error("Exception: %s", exc)
+        # Boundary catch: turn anything unexpected into an exit code.
+        # --debug adds the traceback, which the message alone loses.
+        log.error("Exception: %s", exc, exc_info=args.debug)
         return 99
 
     if args.json:
@@ -253,10 +256,12 @@ def _do_diff(args: argparse.Namespace) -> int:
             as_json=args.json,
         )
     except KeyboardInterrupt:
-        logging.info("INTERRUPTED")
+        log.info("INTERRUPTED")
         return 10
     except Exception as exc:
-        logging.error("Exception: %s", exc)
+        # Boundary catch: turn anything unexpected into an exit code.
+        # --debug adds the traceback, which the message alone loses.
+        log.error("Exception: %s", exc, exc_info=args.debug)
         return 99
 
 
@@ -270,10 +275,12 @@ def _do_plan(args: argparse.Namespace) -> int:
             as_json=args.json,
         )
     except KeyboardInterrupt:
-        logging.info("INTERRUPTED")
+        log.info("INTERRUPTED")
         return 10
     except Exception as exc:
-        logging.error("Exception: %s", exc)
+        # Boundary catch: turn anything unexpected into an exit code.
+        # --debug adds the traceback, which the message alone loses.
+        log.error("Exception: %s", exc, exc_info=args.debug)
         return 99
 
 
@@ -292,10 +299,12 @@ def _do_import(args: argparse.Namespace) -> int:
             materializer=materializer,
         )
     except KeyboardInterrupt:
-        logging.info("INTERRUPTED")
+        log.info("INTERRUPTED")
         return 10
     except Exception as exc:
-        logging.error("Exception: %s", exc)
+        # Boundary catch: turn anything unexpected into an exit code.
+        # --debug adds the traceback, which the message alone loses.
+        log.error("Exception: %s", exc, exc_info=args.debug)
         return 99
     return result.exit_code
 
