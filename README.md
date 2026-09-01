@@ -2,8 +2,6 @@
 
 Can't decide between Jellyfin and Plex? This tool might help. It synchronizes your **movie library** between Jellyfin and Plex formats in **both directions** — without duplicating any files. Instead, it uses **hardlinks** to mirror your collection efficiently, saving storage while keeping both libraries in sync.
 
-> ⚠️ **0.3.0 is another major rewrite.** The internals are reorganised into a clean `discover → plan → realize` pipeline with an immutable Plan as a first-class concept. User-visible: a new **`plan` subcommand** that shows what a sync would do (text or `--json`) without touching anything, and **video-level clashes now auto-resolve with a hash suffix** instead of aborting the movie. The `sync` and `diff` CLI is unchanged. If you depend on the old shape, **try the new version with `--dry-run` first**. Cautious users can pin to a `0.2.x` (or even `0.1.x`) release until they're comfortable. See the [CHANGELOG](./CHANGELOG.md) for the full migration notes.
-
 ## Overview
 
 The script scans the source library, parses each movie folder for metadata (title, year, optional provider ID), and reproduces the same directory structure in the target location. Rather than copying video files, it creates hard links to avoid extra storage usage. Asset folders (e.g., `extras`, `subtitles`) are also mirrored. Loose top-level files (posters, NFOs, subtitles) are synced 1:1 by default since 0.2.0. With `--delete`, any files or folders in the target that are no longer present in the source will be removed.
@@ -326,7 +324,7 @@ Each movie must reside in its own folder, with optional subfolders for extras. D
 
 #### Special filename handling
 
-Jellyfin doesn't distinguish between editions (e.g., Director's Cut) and versions (e.g., 1080p vs. 4K). To work around this, I appended labels like "DVD", "BD", or "4K" to filenames in my personal library, ensuring the highest quality appears first and is selected by default in Jellyfin. Plex, on the other hand, supports editions natively and handles different versions via naming patterns and its internal version management. These specific labels are converted into Plex versions on the way over; other suffixes are treated as editions. The detailed mapping rules (and why DVD/BD/4k beats DVD/SDR/FHD/UHD despite the naming inconsistency) live in [SPECS.md](./SPECS.md).
+Jellyfin doesn't distinguish between editions (e.g., Director's Cut) and versions (e.g., 1080p vs. 4K). To work around this, I appended labels like "DVD", "BD", or "4K" to filenames in my personal library, ensuring the highest quality appears first and is selected by default in Jellyfin. Plex, on the other hand, supports editions natively and handles different versions via naming patterns and its internal version management. These specific labels are converted into Plex versions on the way over; other suffixes are treated as editions. The detailed mapping rules (and why DVD/BD/4k beats DVD/SDR/FHD/UHD despite the naming inconsistency) live in [docs/SPECS.md](./docs/SPECS.md).
 
 ### Plex
 
@@ -353,6 +351,12 @@ Movies
         ├── Production Photos.mkv
         └── Making of.mkv
 ```
+
+## Development
+
+The pipeline architecture and internal vocabulary are documented in
+[docs/DEV.md](./docs/DEV.md); the Plex/Jellyfin format details and translation
+rules live in [docs/SPECS.md](./docs/SPECS.md).
 
 ## License
 
