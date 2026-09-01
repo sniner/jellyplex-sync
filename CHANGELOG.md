@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `library.video_path()` helpers and the `plan.Kind` alias (none were package-level exports)
 
 ### Changed
+- **`jellyplex-sync` is now a thin alias for `jellyplex sync`** — same options and behaviour,
+  but a single parser implementation; its `--help` shows the `jellyplex sync` usage form
 - **`sync` exits with code 2 on a folder-level clash** — when two source folders map to the
   same target folder name, the run has always been aborted, but it reported success (exit 0).
   Scripts and cron jobs can now detect the failure. Exit codes are documented in the README
