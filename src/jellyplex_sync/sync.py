@@ -216,11 +216,12 @@ def sync(
     )
     plan = planner.plan()
 
+    rc = _EXIT_OK
     realize_stats = RealizeStats()
     if plan.folder_clashes:
-        # Match pre-0.3 behaviour: log the clashes and skip the whole sync.
-        # Without this guard a partial sync could leave the target in a
-        # half-translated state when the user expected a hard failure.
+        # Log the clashes and skip the whole sync. Without this guard a
+        # partial sync could leave the target in a half-translated state
+        # when the user expected a hard failure.
         for fc in plan.folder_clashes:
             quoted = [f"'{s}'" for s in fc.source_folder_names]
             log.error(
@@ -228,7 +229,8 @@ def sync(
                 ", ".join(quoted),
                 fc.target_folder_name,
             )
-        log.info("You have to solve the conflicts first to proceed")
+        log.info("Nothing was synced. Rename one side of each conflict, then re-run")
+        rc = _EXIT_FOLDER_CLASH
     else:
         Realizer(materializer=materializer).apply(
             plan,
@@ -292,7 +294,7 @@ def sync(
             len(lib_stats.clashes),
         )
 
-    return 0
+    return rc
 
 
 # ---------------------------------------------------------------------------

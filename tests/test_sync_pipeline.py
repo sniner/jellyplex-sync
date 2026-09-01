@@ -54,10 +54,10 @@ def test_sync_stats_match_pipeline(tmp_path: Path):
     assert len(stats.ignored) == 1
 
 
-def test_sync_folder_clash_makes_zero_movies_processed(tmp_path: Path):
-    """If two source folders map to the same target name, today's
-    behaviour is to log the conflict and not sync anything — preserve
-    that under the new pipeline."""
+def test_sync_folder_clash_aborts_with_nonzero_exit(tmp_path: Path):
+    """If two source folders map to the same target name, the whole run
+    is aborted: nothing is synced, and the exit code says so (2) so
+    scripts and cron jobs can detect the failure."""
     src, dst = tmp_path / "src", tmp_path / "dst"
     src.mkdir()
     dst.mkdir()
@@ -71,7 +71,7 @@ def test_sync_folder_clash_makes_zero_movies_processed(tmp_path: Path):
 
     stats = LibraryStats()
     rc = jp.sync(str(src), str(dst), source_format="plex", stats=stats)
-    assert rc == 0
+    assert rc == 2
     assert stats.movies_processed == 0
     # Both folders are counted as candidates.
     assert stats.movies_total == 2

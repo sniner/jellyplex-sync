@@ -82,6 +82,12 @@ The first positional is the source library, the second is the target. By default
 
 Use `--copy` when source and target are on different filesystems (NAS to local disk, cross-pool moves, etc.). The size+mtime check makes re-runs cheap.
 
+#### Exit codes
+
+- `0` — sync completed (including "nothing to do").
+- `1` — setup error (missing directories, undecipherable format).
+- `2` — folder-level clash: the run was aborted, nothing was synced.
+
 #### Examples
 
 Mirror a Jellyfin library into a new Plex structure:
@@ -291,7 +297,7 @@ This helper can also be used on other NAS systems or Linux servers — schedule 
 - **Stray items** — With `--delete`, any file or folder in the target that has no counterpart in the source is removed. Without `--delete`, strays are still reported in the summary and the `--json` output, plus a warning at the end of the run points at `--delete`.
 - **Ignored items** — Entries the scanner couldn't classify (stray files at the library root, folders whose names don't parse) are reported in the summary and the `--json` `ignored` array. They are *not* carried over to the target — useful to verify before deleting the source.
 - **Video-level clashes auto-resolve** — When two source files would translate to the same target name (a common P→J outcome: `[1080p].mkv` and `[1080p] [remux].mkv` both collapse to `- BD.mkv`), a short hash of the source filename gets appended (e.g. `Movie - BD [a3f7c819].mkv`). Both files get synced; spot the hash in the `plan` output or in `--json` via the per-file `disambiguation` field. Pre-0.3 the whole movie was skipped on clash.
-- **Folder-level clashes still abort** — Two source folders mapping to the same target folder name (e.g. via dropped `[bracket]` labels) is a structural error in the source library, not something to silently merge. The run is stopped, the clashing folders are listed, and you're asked to rename one side.
+- **Folder-level clashes still abort** — Two source folders mapping to the same target folder name (e.g. via dropped `[bracket]` labels) is a structural error in the source library, not something to silently merge. The run is stopped with exit code 2, the clashing folders are listed, and you're asked to rename one side.
 
 ## Library layouts
 

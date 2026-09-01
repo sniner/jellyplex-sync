@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+- **`sync` exits with code 2 on a folder-level clash** — when two source folders map to the
+  same target folder name, the run has always been aborted, but it reported success (exit 0).
+  Scripts and cron jobs can now detect the failure. Exit codes are documented in the README
+
 ### Fixed
 - **Missing source path reported as such** — pointing `sync`, `diff`, `plan`, or `import` at a
   nonexistent source directory now says "Source directory ... does not exist" instead of the
