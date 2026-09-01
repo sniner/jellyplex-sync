@@ -3,9 +3,8 @@ from __future__ import annotations
 import logging
 import pathlib
 import re
-from collections.abc import Generator
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, runtime_checkable
+from typing import Literal, Protocol
 
 from .model import MovieInfo, VideoInfo
 
@@ -49,10 +48,8 @@ class DropError(ValueError):
     """Raised by StrictReporter when the Writer reports a Drop."""
 
 
-@runtime_checkable
 class Reporter(Protocol):
     def drop(self, drop: Drop) -> None: ...
-    def info(self, message: str) -> None: ...
 
 
 class LoggingReporter:
@@ -79,9 +76,6 @@ class LoggingReporter:
             drop.reason,
         )
 
-    def info(self, message: str) -> None:
-        log.info(message)
-
 
 class StrictReporter:
     """Raises DropError on the first Drop. Use when callers want sync
@@ -91,34 +85,23 @@ class StrictReporter:
         key = f"{drop.key}=" if drop.key else ""
         raise DropError(f"{drop.kind} {key}{drop.value!r}: {drop.reason}")
 
-    def info(self, message: str) -> None:
-        log.info(message)
-
 
 @dataclass
 class CollectingReporter:
-    """Accumulates drops and info messages for later inspection.
-    Used by report-only flows like the `diff` subcommand."""
+    """Accumulates drops for later inspection."""
 
     drops: list[Drop] = field(default_factory=list)
-    messages: list[str] = field(default_factory=list)
 
     def drop(self, drop: Drop) -> None:
         self.drops.append(drop)
 
-    def info(self, message: str) -> None:
-        self.messages.append(message)
-
 
 class NullReporter:
-    """Discards everything. For rendering steps whose losses are
-    recorded elsewhere — e.g. a Writer re-rendering a name whose drops
-    the Plan already carries."""
+    """Discards drops. For rendering steps whose losses are recorded
+    elsewhere — e.g. a Writer re-rendering a name whose drops the Plan
+    already carries."""
 
     def drop(self, drop: Drop) -> None:
-        pass
-
-    def info(self, message: str) -> None:
         pass
 
 
@@ -154,19 +137,6 @@ class LibraryWriter(Protocol):
         *,
         hash_suffix: str | None = None,
     ) -> str: ...
-
-
-def movie_path(writer: LibraryWriter, movie: MovieInfo, reporter: Reporter) -> pathlib.Path:
-    return writer.base_dir / writer.movie_name(movie, reporter)
-
-
-def video_path(
-    writer: LibraryWriter,
-    movie: MovieInfo,
-    video: VideoInfo,
-    reporter: Reporter,
-) -> pathlib.Path:
-    return movie_path(writer, movie, reporter) / writer.video_name(movie, video, reporter)
 
 
 @dataclass
@@ -225,27 +195,3 @@ class FileEvent:
     target: pathlib.Path
     source: pathlib.Path | None = None
     context: str | None = None
-
-
-def scan(
-    reader: LibraryReader,
-    ignored: list[IgnoredEntry] | None = None,
-) -> Generator[tuple[pathlib.Path, MovieInfo], None, None]:
-    """Walk a library and yield (folder, movie) for every parseable movie folder.
-
-    If `ignored` is provided, top-level entries the scanner skips (stray
-    files at the library root, folders whose names don't parse) are
-    appended to it.
-    """
-    for entry in reader.base_dir.glob("*"):
-        if not entry.is_dir():
-            if ignored is not None:
-                ignored.append(IgnoredEntry(entry, "not a directory"))
-            continue
-        movie = reader.parse_movie(entry)
-        if not movie:
-            log.warning("Ignoring folder with unparsable name: %s", entry.name)
-            if ignored is not None:
-                ignored.append(IgnoredEntry(entry, "unparseable folder name"))
-            continue
-        yield entry, movie

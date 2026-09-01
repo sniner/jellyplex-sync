@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import pathlib
 from dataclasses import dataclass
-from typing import Literal
 
 from .library import Drop, FolderClash, IgnoredEntry, MovieClash
 from .model import MovieInfo
@@ -44,9 +43,6 @@ class PlannedFile:
     target_name: str
     drops: tuple[Drop, ...] = ()
     disambiguation: DisambiguationNote | None = None
-
-
-Kind = Literal["video", "asset", "loose"]
 
 
 @dataclass(frozen=True)

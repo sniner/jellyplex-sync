@@ -24,6 +24,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   translation losses from the Plan instead
 - **`jp.SyncResult` and `jp.LibraryStats`** exported at package level
 
+### Removed
+- **`Reporter.info()`** — the Reporter protocol is drop-only now; nothing ever called it.
+  `CollectingReporter.messages` is gone with it. Custom reporters that still define an
+  `info` method keep working — the protocol simply no longer requires it
+- **Pre-0.3 leftovers** — the unused `library.scan()`, `library.movie_path()`,
+  `library.video_path()` helpers and the `plan.Kind` alias (none were package-level exports)
+
 ### Changed
 - **`sync` exits with code 2 on a folder-level clash** — when two source folders map to the
   same target folder name, the run has always been aborted, but it reported success (exit 0).

@@ -260,7 +260,6 @@ class Drop:
 
 class Reporter(Protocol):
     def drop(self, drop: Drop) -> None: ...
-    def info(self, message: str) -> None: ...
 ```
 
 Three concrete reporters cover the usable modes:
