@@ -13,6 +13,7 @@ import logging
 import pathlib
 import sys
 from dataclasses import dataclass, field
+from typing import TextIO
 
 # Backward-compatible re-exports: these lived here before 0.4.
 from .compare import DiffEntry as DiffEntry
@@ -86,7 +87,6 @@ def sync(
     delete: bool = False,
     create: bool = False,
     verbose: bool = False,
-    debug: bool = False,
     source_format: str | None = None,
     target_format: str | None = None,
     reporter: Reporter | None = None,
@@ -99,9 +99,6 @@ def sync(
     A caller-supplied `stats` object is filled in place and also
     returned as `result.stats`.
     """
-    if debug:
-        logging.getLogger().setLevel(logging.DEBUG)
-
     reporter = reporter or LoggingReporter(verbose=verbose)
     materializer = materializer or HardlinkMaterializer()
     source_path = pathlib.Path(source)
@@ -272,10 +269,9 @@ def diff(
     source: str,
     target: str,
     *,
-    debug: bool = False,
     source_format: str | None = None,
     target_format: str | None = None,
-    out=None,
+    out: TextIO | None = None,
     as_json: bool = False,
 ) -> int:
     """Compare a source library against an existing target library.
@@ -285,10 +281,7 @@ def diff(
     2 if there's a setup error. With `as_json=True`, emits the machine-
     readable JSON document instead of the human-readable text report.
     """
-    if debug:
-        logging.getLogger().setLevel(logging.DEBUG)
-
-    out = out or sys.stdout
+    stream: TextIO = out if out is not None else sys.stdout
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
 
@@ -315,7 +308,7 @@ def diff(
 
     if as_json:
         write_diff_json(
-            out,
+            stream,
             result,
             endpoints.source_format,
             endpoints.target_format,
@@ -329,7 +322,7 @@ def diff(
             endpoints.target_format,
             source_path,
             target_path,
-            out,
+            stream,
         )
     return 1 if result.has_differences else 0
 
@@ -338,10 +331,9 @@ def plan(
     source: str,
     target: str,
     *,
-    debug: bool = False,
     source_format: str | None = None,
     target_format: str | None = None,
-    out=None,
+    out: TextIO | None = None,
     as_json: bool = False,
 ) -> int:
     """Build the Plan a sync would execute and print it. Read-only on
@@ -349,10 +341,7 @@ def plan(
     2 if there was a setup error (paths or format resolution). Clashes
     and translation losses are reported but don't change the exit code
     — they're informative, not failures."""
-    if debug:
-        logging.getLogger().setLevel(logging.DEBUG)
-
-    out = out or sys.stdout
+    stream: TextIO = out if out is not None else sys.stdout
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
 
@@ -370,9 +359,9 @@ def plan(
     built_plan = planner.plan()
 
     if as_json:
-        write_plan_json(out, built_plan)
+        write_plan_json(stream, built_plan)
     else:
-        print_plan(built_plan, out)
+        print_plan(built_plan, stream)
     return 0
 
 
@@ -383,7 +372,6 @@ def import_media(
     dry_run: bool = False,
     create: bool = False,
     verbose: bool = False,
-    debug: bool = False,
     source_format: str | None = None,
     target_format: str | None = None,
     reporter: Reporter | None = None,
@@ -400,9 +388,6 @@ def import_media(
     Does not touch existing content in the target — it only adds.
     Returns a SyncResult; its `exit_code` is what the CLI exits with.
     """
-    if debug:
-        logging.getLogger().setLevel(logging.DEBUG)
-
     reporter = reporter or LoggingReporter(verbose=verbose)
     materializer = materializer or MoveMaterializer()
     source_path = pathlib.Path(source)

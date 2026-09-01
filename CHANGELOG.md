@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   the resolved source/target formats, the run's `LibraryStats`, and the translation losses —
   so callers no longer need the `stats`/`reporter` in-out parameters (they still work).
   The CLI commands and their exit codes are unchanged
+- **Library functions no longer configure logging** — the `debug` parameter of `jp.sync()`,
+  `jp.diff()`, `jp.plan()`, and `jp.import_media()` is gone; it mutated the root logger's
+  level, overriding the host application's logging setup. Configure logging yourself (the
+  CLI's `--debug` flag is unaffected — it always did this via `logging.basicConfig`)
 - **`Disambiguator` protocol** — `disambiguate()` no longer takes a `reporter` argument;
   translation losses now come back per video in `DisambiguationResult.drops`. Only affects
   custom disambiguator implementations; both built-in disambiguators are updated

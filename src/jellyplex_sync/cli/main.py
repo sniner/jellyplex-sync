@@ -207,7 +207,6 @@ def _do_sync(args: argparse.Namespace) -> int:
             delete=args.delete,
             create=args.create,
             verbose=args.verbose,
-            debug=args.debug,
             source_format=args.source_format,
             target_format=args.target_format,
             materializer=materializer,
@@ -249,7 +248,6 @@ def _do_diff(args: argparse.Namespace) -> int:
         return jp.diff(
             args.source,
             args.target,
-            debug=args.debug,
             source_format=args.source_format,
             target_format=args.target_format,
             as_json=args.json,
@@ -267,7 +265,6 @@ def _do_plan(args: argparse.Namespace) -> int:
         return jp.plan(
             args.source,
             args.target,
-            debug=args.debug,
             source_format=args.source_format,
             target_format=args.target_format,
             as_json=args.json,
@@ -290,7 +287,6 @@ def _do_import(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
             create=args.create,
             verbose=args.verbose,
-            debug=args.debug,
             source_format=args.source_format,
             target_format=args.target_format,
             materializer=materializer,
