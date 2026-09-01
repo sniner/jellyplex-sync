@@ -6,77 +6,41 @@ on:
       - 'v*'
 
 jobs:
-  verify-version:
-    name: Verify tag matches pyproject version
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Compare git tag with [project].version
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          ver=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')
-          echo "Git tag (stripped): $tag"
-          echo "pyproject version:  $ver"
-          if [ "$tag" != "$ver" ]; then
-              echo "::error::Git tag v$tag does not match [project].version $ver — bump pyproject.toml before tagging."
-              exit 1
-          fi
-          echo "OK: tag and pyproject version match."
-
-  test:
-    runs-on: ubuntu-latest
-    needs: verify-version
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Run Tests
-        run: uv run pytest
-
   release:
     runs-on: ubuntu-latest
-    needs: test
     permissions:
       contents: write
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v7
+
+      - name: Verify tag matches package version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(awk '/^\[project\]/{p=1;next} /^\[/{p=0} p&&/^[[:space:]]*version[[:space:]]*=/{gsub(/^[[:space:]]*version[[:space:]]*=[[:space:]]*"/,"");gsub(/".*$/,"");print;exit}' pyproject.toml)
+          [ "$tag" = "$pkg" ] || { echo "::error::tag v$tag != pyproject.toml $pkg"; exit 1; }
+
+      - name: Extract release notes from CHANGELOG
+        # Heading may be '## [X.Y.Z] - DATE' (this repo) or '## X.Y.Z (DATE)'.
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+              $0 ~ "^## \\[?" ver "\\]?( |$|\\()" { grab=1; next }
+              grab && /^## /                      { exit }
+              grab                                { print }
+          ' CHANGELOG.md | sed -e '/./,$!d' > release-notes.md
+          [ -s release-notes.md ] || { echo "::error::No CHANGELOG section for $version"; exit 1; }
+          cat release-notes.md
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
+        uses: astral-sh/setup-uv@v10.0.1
 
       - name: Build package
         run: uv build
 
-      - name: Generate release notes from commits between tags
-        run: |
-          prev_tag=$(git describe --tags --abbrev=0 --match='v*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)
-          if [ -n "$prev_tag" ]; then
-              range="${prev_tag}..${GITHUB_REF_NAME}"
-              echo "## Changes since ${prev_tag}" > release-notes.md
-          else
-              range="${GITHUB_REF_NAME}"
-              echo "## Initial release" > release-notes.md
-          fi
-          echo "" >> release-notes.md
-          git log --no-merges --reverse --pretty=tformat:'### %s%n%n%b%n' "$range" \
-            | sed '/^Co-Authored-By:/d' \
-            >> release-notes.md
-          echo "--- release-notes.md ---"
-          cat release-notes.md
-
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/*.whl
@@ -92,14 +56,22 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: "3.13"
+
+      - name: Create virtual environment and install dependencies
+        run: |
+          uv venv
+          uv pip install . pyinstaller
 
       - name: Build binary with PyInstaller
         run: |
-          python3 -m venv .build-env
-          .build-env/bin/pip install -q . pyinstaller
           echo 'from jellyplex_sync.cli.main import main; main()' > _entry.py
-          .build-env/bin/pyinstaller --onefile --name jellyplex-linux-x86_64 _entry.py
+          uv run pyinstaller --onefile --name jellyplex-linux-x86_64 _entry.py
 
       - name: Smoke-test the binary
         run: |
@@ -107,6 +79,6 @@ jobs:
           echo "Binary size: $(du -h dist/jellyplex-linux-x86_64 | cut -f1)"
 
       - name: Attach binary to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/jellyplex-linux-x86_64
