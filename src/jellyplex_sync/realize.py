@@ -70,9 +70,14 @@ class Realizer:
         # movie folder. Done after all movies so the planned folders exist
         # (matters when we want to confirm "this WOULD be a stray" in
         # dry-run output without the planned folder masking it).
+        # Folders of clash-skipped movies are not strays: they belong to a
+        # source movie, so "skipped" must mean their target stays untouched.
         planned_folder_names = {m.target_folder.name for m in plan.movies}
+        protected_folder_names = set(plan.protected_folders)
         for entry in sorted(plan.target_root.iterdir()):
             if entry.name in planned_folder_names:
+                continue
+            if entry.name in protected_folder_names:
                 continue
             stats.strays_in_target.append(entry.name)
             if delete:
@@ -117,6 +122,7 @@ class Realizer:
                 {f.target_name for f in movie.videos}
                 | {f.target_name for f in movie.loose_files}
                 | {a.folder_name for a in movie.assets}
+                | set(movie.protected_files)
             )
             for entry in sorted(movie.target_folder.iterdir()):
                 if entry.name in keep:

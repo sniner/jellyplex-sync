@@ -78,6 +78,7 @@ class Planner:
         candidates_by_target = self._group_candidates(source_root, ignored)
         planned_movies: list[PlannedMovie] = []
         folder_clashes: list[FolderClash] = []
+        protected_folders: list[str] = []
 
         for target_name, items in candidates_by_target.items():
             if len(items) > 1:
@@ -87,6 +88,7 @@ class Planner:
                         source_folder_names=tuple(c.source_path.name for c in items),
                     )
                 )
+                protected_folders.append(target_name)
                 continue
             (candidate,) = items
             pm, movie_clashes = self._build_planned_movie(
@@ -95,6 +97,10 @@ class Planner:
             clashes.extend(movie_clashes)
             if pm is not None:
                 planned_movies.append(pm)
+            else:
+                # The movie was skipped wholesale; an existing target
+                # folder of that name belongs to it, not to the strays.
+                protected_folders.append(target_name)
 
         return Plan(
             source_root=source_root,
@@ -105,6 +111,7 @@ class Planner:
             ignored=tuple(ignored),
             clashes=tuple(clashes),
             folder_clashes=tuple(folder_clashes),
+            protected_folders=tuple(protected_folders),
         )
 
     # ------------------------------------------------------------------
@@ -191,6 +198,7 @@ class Planner:
             videos=planned_videos,
             loose_files=planned_loose,
             assets=planned_assets,
+            protected_files=tuple(c.target_filename for c in dis_result.unresolved),
         )
         return pm, list(dis_result.unresolved)
 

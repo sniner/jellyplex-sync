@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   Scripts and cron jobs can now detect the failure. Exit codes are documented in the README
 
 ### Fixed
+- **Movies skipped due to a clash are now safe from `--delete`** — a movie the disambiguator
+  could not resolve is excluded from the sync, but its previously synced target folder (or the
+  clash-collapsed video name) counted as a stray and was deleted by `--delete`. Skipped now
+  means untouched: clash targets are never treated as strays
 - **Missing source path reported as such** — pointing `sync`, `diff`, `plan`, or `import` at a
   nonexistent source directory now says "Source directory ... does not exist" instead of the
   misleading "Unable to determine source library type". Exit codes are unchanged

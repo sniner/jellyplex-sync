@@ -63,7 +63,13 @@ class PlannedAsset:
 class PlannedMovie:
     """Everything the Planner foresees for one movie folder. Video
     names are guaranteed unique within `videos` (the Disambiguator
-    handles collisions before the PlannedMovie is sealed)."""
+    handles collisions before the PlannedMovie is sealed).
+
+    `protected_files` holds the target filenames of videos the
+    Disambiguator could NOT resolve. Those videos are absent from
+    `videos`, but a previous run may have created a file under the
+    collapsed name — the Realizer must not treat it as a stray, or
+    `--delete` would destroy data of a movie reported as "skipped"."""
 
     source_path: pathlib.Path
     target_folder: pathlib.Path
@@ -72,11 +78,17 @@ class PlannedMovie:
     loose_files: tuple[PlannedFile, ...] = ()
     assets: tuple[PlannedAsset, ...] = ()
     folder_drops: tuple[Drop, ...] = ()
+    protected_files: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class Plan:
-    """The full sync plan for one source/target pair."""
+    """The full sync plan for one source/target pair.
+
+    `protected_folders` holds the target folder names of source movies
+    that could not be planned at all (folder clashes, or every video
+    unresolved) — they are absent from `movies`, but the Realizer must
+    not treat an existing target folder of that name as a stray."""
 
     source_root: pathlib.Path
     target_root: pathlib.Path
@@ -86,3 +98,4 @@ class Plan:
     ignored: tuple[IgnoredEntry, ...] = ()
     clashes: tuple[MovieClash, ...] = ()
     folder_clashes: tuple[FolderClash, ...] = ()
+    protected_folders: tuple[str, ...] = ()

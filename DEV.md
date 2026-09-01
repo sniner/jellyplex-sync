@@ -140,6 +140,7 @@ class PlannedMovie:
     loose_files: tuple[PlannedFile, ...] = ()
     assets: tuple[PlannedAsset, ...] = ()
     folder_drops: tuple[Drop, ...] = ()
+    protected_files: tuple[str, ...] = ()      # clash-collapsed names — never strays
 
 @dataclass(frozen=True)
 class Plan:
@@ -151,6 +152,7 @@ class Plan:
     ignored: tuple[IgnoredEntry, ...] = ()
     clashes: tuple[MovieClash, ...] = ()       # rare with hash fallback
     folder_clashes: tuple[FolderClash, ...] = ()
+    protected_folders: tuple[str, ...] = ()    # clash-skipped movies — never strays
 
 @dataclass(frozen=True)
 class DisambiguationNote:
@@ -384,6 +386,12 @@ inside each movie folder (movie-level strays) and inside each asset
 subfolder (asset-level strays). `FileEvent.context` records which
 scope a remove came from (`library_stray` / `movie_stray` /
 `asset_stray`).
+
+Clash-skipped work is exempt from stray detection: folder names in
+`Plan.protected_folders` and, per movie, the names in
+`PlannedMovie.protected_files` are neither counted nor deleted —
+"skipped due to clash" must mean the target stays untouched, even
+under `--delete`.
 
 ## Compare (`compare.py`)
 
