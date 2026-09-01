@@ -37,6 +37,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   Scripts and cron jobs can now detect the failure. Exit codes are documented in the README
 
 ### Fixed
+- **`jellyplex import --json` is rejected instead of silently ignored** — the flag quieted
+  the logs but produced no document, so the run looked dead. `import` no longer offers
+  `--json` (it has no JSON output yet); passing it is now a usage error
 - **`sync --json` no longer scans the source tree twice** — the CLI re-ran format
   auto-detection (a full walk of the source library) just to label the JSON document; it now
   reads the resolved formats from the run's result. Noticeable on large libraries

@@ -16,8 +16,10 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Convert a media library between Plex and Jellyfin layouts.",
     )
 
-    # Flags shared by every subcommand. Use a parent parser so they can be
-    # given either before or after the subcommand name.
+    # Flags shared by every subcommand. Parent parsers so they can be
+    # given either before or after the subcommand name. --json lives in
+    # its own parent because `import` has no JSON output yet — offering
+    # the flag there would silently produce nothing.
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "-v",
@@ -30,7 +32,9 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show debug messages.",
     )
-    common.add_argument(
+
+    json_opt = argparse.ArgumentParser(add_help=False)
+    json_opt.add_argument(
         "--json",
         action="store_true",
         help="Emit a machine-readable JSON document on stdout. Logs continue to go to stderr.",
@@ -40,7 +44,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sync_p = sub.add_parser(
         "sync",
-        parents=[common],
+        parents=[common, json_opt],
         help="Mirror a source library into the target layout.",
     )
     _add_io_args(sync_p)
@@ -85,14 +89,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     diff_p = sub.add_parser(
         "diff",
-        parents=[common],
+        parents=[common, json_opt],
         help="Compare source and target libraries without writing anything.",
     )
     _add_io_args(diff_p)
 
     plan_p = sub.add_parser(
         "plan",
-        parents=[common],
+        parents=[common, json_opt],
         help="Show the Plan a sync would execute, without touching the target.",
     )
     _add_io_args(plan_p)
@@ -118,7 +122,9 @@ def _build_parser() -> argparse.ArgumentParser:
         const="copy",
         help="Copy files; source is kept. On re-runs skip files whose size and mtime match.",
     )
-    import_p.set_defaults(mode="move")
+    # No --json for import (no JSON output yet); the default keeps the
+    # shared `args.json` logging logic in main() working.
+    import_p.set_defaults(mode="move", json=False)
     import_p.add_argument(
         "--dry-run",
         action="store_true",
