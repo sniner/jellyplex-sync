@@ -116,9 +116,7 @@ def test_sync_cross_device_link_points_at_copy(
 ) -> None:
     src = _one_movie_source(tmp_path)
     with caplog.at_level(logging.ERROR):
-        result = jp.sync(
-            str(src), str(dst), materializer=_FailingMaterializer(errno.EXDEV)
-        )
+        result = jp.sync(str(src), str(dst), materializer=_FailingMaterializer(errno.EXDEV))
     assert result.exit_code == 1
     assert "different filesystems" in caplog.text
     assert "--copy" in caplog.text

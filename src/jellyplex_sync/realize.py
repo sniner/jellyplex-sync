@@ -50,9 +50,7 @@ class Realizer:
         stats: RealizeStats | None = None,
     ) -> RealizeStats:
         if not plan.target_root.is_dir():
-            raise ValueError(
-                f"Target directory '{plan.target_root}' does not exist"
-            )
+            raise ValueError(f"Target directory '{plan.target_root}' does not exist")
 
         stats = stats or RealizeStats()
         stats.ignored_count += len(plan.ignored)
@@ -161,10 +159,9 @@ class Realizer:
             self._materialize_file(pf, target_path, dry_run, verbose, stats)
 
         if delete and target_path.is_dir():
-            keep = (
-                {f.target_name for f in asset.files}
-                | {sf.folder_name for sf in asset.subfolders}
-            )
+            keep = {f.target_name for f in asset.files} | {
+                sf.folder_name for sf in asset.subfolders
+            }
             for entry in sorted(target_path.iterdir()):
                 if entry.name in keep:
                     continue
@@ -226,6 +223,4 @@ class Realizer:
         result = utils.remove(entry, dry_run=dry_run)
         stats.files_removed += result.files
         stats.remove_errors += result.errors
-        stats.events.append(
-            FileEvent(action="remove", target=entry, context=context)
-        )
+        stats.events.append(FileEvent(action="remove", target=entry, context=context))

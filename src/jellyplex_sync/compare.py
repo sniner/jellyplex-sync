@@ -50,9 +50,7 @@ class DiffResult:
     @property
     def has_differences(self) -> bool:
         return bool(
-            self.movies_only_in_source
-            or self.movies_only_in_target
-            or self.differing_movies
+            self.movies_only_in_source or self.movies_only_in_target or self.differing_movies
         )
 
 

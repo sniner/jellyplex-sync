@@ -99,9 +99,7 @@ def _resolve_formats(
     if src is None:
         source_type = guess_library_type(source_path)
         if not source_type:
-            log.error(
-                "Unable to determine source library type, please provide --source-format"
-            )
+            log.error("Unable to determine source library type, please provide --source-format")
             return None
         src = source_type.shortname()
 

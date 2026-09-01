@@ -28,7 +28,9 @@ def _endpoint_payload(path: pathlib.Path, fmt: str) -> dict[str, Any]:
     return {"path": str(path), "format": fmt}
 
 
-def _ignored_payload(entries: list[IgnoredEntry] | tuple[IgnoredEntry, ...]) -> list[dict[str, Any]]:
+def _ignored_payload(
+    entries: list[IgnoredEntry] | tuple[IgnoredEntry, ...],
+) -> list[dict[str, Any]]:
     return [{"path": str(e.path), "name": e.path.name, "reason": e.reason} for e in entries]
 
 

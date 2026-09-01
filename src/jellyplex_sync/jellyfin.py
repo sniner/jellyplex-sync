@@ -15,9 +15,7 @@ _RESOLUTION_PATTERN = re.compile(r"\d{3,4}[pi]$")
 
 _JELLYFIN_ID_BLOCK = re.compile(r"(\[(?P<key>[a-zA-Z]+id)-(?P<value>[^\]]+)\])")
 _JELLYFIN_ID_ONLY = re.compile(r"^\[[a-zA-Z]+id-[^\]]+\]$")
-_JELLYFIN_TITLE_YEAR = re.compile(
-    r"^(?P<title>.+?)(?:\s+\((?P<year>\d{4})\))?(?:\s*-\s*)?$"
-)
+_JELLYFIN_TITLE_YEAR = re.compile(r"^(?P<title>.+?)(?:\s+\((?P<year>\d{4})\))?(?:\s*-\s*)?$")
 
 # Maps any resolution-like label string we may see to the canonical Plex form.
 # Used by the parser when interpreting Jellyfin version labels.

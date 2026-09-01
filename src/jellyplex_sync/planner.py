@@ -100,9 +100,7 @@ class Planner:
                 protected_folders.append(target_name)
                 continue
             (candidate,) = items
-            pm, movie_clashes = self._build_planned_movie(
-                candidate, target_root / target_name
-            )
+            pm, movie_clashes = self._build_planned_movie(candidate, target_root / target_name)
             clashes.extend(movie_clashes)
             if pm is not None:
                 planned_movies.append(pm)
@@ -147,9 +145,7 @@ class Planner:
                 else self._reader.parse_movie(group.source_path)
             )
             if movie is None:
-                ignored.append(
-                    IgnoredEntry(group.source_path, "unparseable folder name")
-                )
+                ignored.append(IgnoredEntry(group.source_path, "unparseable folder name"))
                 continue
             collector = CollectingReporter()
             target_name = self._writer.movie_name(movie, collector)
@@ -168,9 +164,7 @@ class Planner:
         candidate: _Candidate,
         target_folder: pathlib.Path,
     ) -> tuple[PlannedMovie | None, list[MovieClash]]:
-        videos_info = [
-            (self._reader.parse_video(p), p) for p in candidate.group.video_files
-        ]
+        videos_info = [(self._reader.parse_video(p), p) for p in candidate.group.video_files]
 
         if videos_info:
             dis_result = self._disambiguator.disambiguate(
@@ -194,24 +188,16 @@ class Planner:
         )
 
         planned_loose = tuple(
-            PlannedFile(source=p, target_name=p.name)
-            for p in candidate.group.loose_files
+            PlannedFile(source=p, target_name=p.name) for p in candidate.group.loose_files
         )
 
-        planned_assets = tuple(
-            self._build_planned_asset(p) for p in candidate.group.asset_dirs
-        )
+        planned_assets = tuple(self._build_planned_asset(p) for p in candidate.group.asset_dirs)
 
         # All-clashes corner case: every video in this folder ended up
         # unresolved, and there's nothing else to sync. Returning None
         # keeps the empty movie out of the Plan; the clashes are still
         # reported via Plan.clashes by the caller.
-        if (
-            videos_info
-            and not planned_videos
-            and not planned_loose
-            and not planned_assets
-        ):
+        if videos_info and not planned_videos and not planned_loose and not planned_assets:
             return None, list(dis_result.unresolved)
 
         pm = PlannedMovie(

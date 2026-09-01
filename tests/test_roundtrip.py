@@ -80,7 +80,9 @@ def test_plex_to_jellyfin_to_plex_is_idempotent(preader, jwriter, jreader, pwrit
 
 
 @pytest.mark.parametrize("plex_name", PLEX_ROUND_TRIP_SAMPLES, ids=PLEX_ROUND_TRIP_SAMPLES)
-def test_jellyfin_to_plex_to_jellyfin_is_idempotent(preader, jwriter, jreader, pwriter, plex_name):
+def test_jellyfin_to_plex_to_jellyfin_is_idempotent(
+    preader, jwriter, jreader, pwriter, plex_name
+):
     # Use the Plex sample to compute the canonical Jellyfin form, then
     # round-trip from there. Avoids hand-writing intermediate Jellyfin forms
     # whose canonicality we'd have to guess.

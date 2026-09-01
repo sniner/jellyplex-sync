@@ -182,9 +182,7 @@ def test_two_folders_collapsing_to_one_target_folder_clash(tmp_path):
 
 
 def test_naive_disambiguator_records_movie_clash(tmp_path):
-    planner, source, _target = _make_planner(
-        tmp_path, disambiguator=NaiveDisambiguator()
-    )
+    planner, source, _target = _make_planner(tmp_path, disambiguator=NaiveDisambiguator())
     movie = source / "Movie (2020)"
     movie.mkdir()
     (movie / "Movie (2020) [1080p].mkv").write_text("v")
@@ -289,9 +287,7 @@ def test_reporter_collects_translation_drops(tmp_path):
 
 
 def test_lint_mode_plex_to_plex(tmp_path):
-    planner, source, _ = _make_planner(
-        tmp_path, source_format="plex", target_format="plex"
-    )
+    planner, source, _ = _make_planner(tmp_path, source_format="plex", target_format="plex")
     movie = source / "Movie (2020) {imdb-tt0000001}"
     movie.mkdir()
     (movie / "Movie (2020) {imdb-tt0000001}.mkv").write_text("v")

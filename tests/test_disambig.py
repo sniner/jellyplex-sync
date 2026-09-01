@@ -90,9 +90,7 @@ def test_naive_mixed_collision_and_uniqueness(movie, jwriter):
 
 
 def test_naive_empty_videos(movie, jwriter):
-    result = NaiveDisambiguator().disambiguate(
-        movie, [], jwriter, movie_folder="Movie (2020)"
-    )
+    result = NaiveDisambiguator().disambiguate(movie, [], jwriter, movie_folder="Movie (2020)")
     assert result.names == {}
     assert result.notes == {}
     assert result.unresolved == ()

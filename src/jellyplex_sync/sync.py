@@ -290,9 +290,7 @@ def diff(
         return 2
 
     if not endpoints.target_writer.base_dir.is_dir():
-        log.error(
-            "Target directory '%s' does not exist", endpoints.target_writer.base_dir
-        )
+        log.error("Target directory '%s' does not exist", endpoints.target_writer.base_dir)
         return 2
 
     # 0.3 pipeline: Planner.plan() + compare(plan). The Plan records the

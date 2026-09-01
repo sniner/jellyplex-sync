@@ -127,7 +127,9 @@ def test_sync_json_events_payload(tmp_path: Path) -> None:
     stats = LibraryStats(
         events=[
             FileEvent(action="link", target=tmp_path / "dst.mkv", source=tmp_path / "src.mkv"),
-            FileEvent(action="skip", target=tmp_path / "dst2.mkv", source=tmp_path / "src2.mkv"),
+            FileEvent(
+                action="skip", target=tmp_path / "dst2.mkv", source=tmp_path / "src2.mkv"
+            ),
             FileEvent(action="remove", target=tmp_path / "stray.mkv", context="library_stray"),
             FileEvent(action="remove", target=tmp_path / "ext.mkv", context="movie_stray"),
         ]

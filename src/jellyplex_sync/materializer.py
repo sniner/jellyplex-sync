@@ -115,9 +115,7 @@ class CopyMaterializer:
             if events is not None:
                 events.append(FileEvent(action="skip", target=dst, source=src))
             return False
-        return _copy(
-            src, dst, dry_run=dry_run, replaces_existing=dst.exists(), events=events
-        )
+        return _copy(src, dst, dry_run=dry_run, replaces_existing=dst.exists(), events=events)
 
 
 class ForceCopyMaterializer:
@@ -141,9 +139,7 @@ class ForceCopyMaterializer:
         events: list[FileEvent] | None = None,
     ) -> bool:
         _ = verbose  # force-copy always logs the copy; verbose flag has no effect
-        return _copy(
-            src, dst, dry_run=dry_run, replaces_existing=dst.exists(), events=events
-        )
+        return _copy(src, dst, dry_run=dry_run, replaces_existing=dst.exists(), events=events)
 
 
 class MoveMaterializer:
@@ -201,9 +197,7 @@ class MoveMaterializer:
                 src.unlink()
             return False
 
-        result = _copy(
-            src, dst, dry_run=dry_run, replaces_existing=dst.exists(), events=events
-        )
+        result = _copy(src, dst, dry_run=dry_run, replaces_existing=dst.exists(), events=events)
         if result:
             if dry_run:
                 log.info("DELETE %s", src)

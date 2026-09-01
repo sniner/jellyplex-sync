@@ -264,11 +264,7 @@ def test_events_distinguish_movie_vs_asset_vs_library_stray(tmp_path):
     plan = _plan_from(source, target)
     stats = Realizer().apply(plan, delete=True)
 
-    contexts = {
-        e.target.name: e.context
-        for e in stats.events
-        if e.action == "remove"
-    }
+    contexts = {e.target.name: e.context for e in stats.events if e.action == "remove"}
     assert contexts == {
         "lib-orphan": "library_stray",
         "stale-at-movie.txt": "movie_stray",

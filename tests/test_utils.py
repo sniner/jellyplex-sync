@@ -108,6 +108,7 @@ def test_remove_continues_past_permission_errors(tmp_path: Path) -> None:
 def test_remove_dry_run_matches_real_run_on_directory(tmp_path: Path) -> None:
     """Dry-run accuracy: the same call with dry_run=True predicts what
     the real run produces, with no side effects."""
+
     def build(parent: Path) -> Path:
         root = parent / "movie"
         _touch(root / "movie.mkv", b"v")

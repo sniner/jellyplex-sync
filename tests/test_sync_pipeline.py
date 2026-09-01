@@ -32,7 +32,9 @@ def test_sync_links_one_movie_end_to_end(tmp_path: Path):
 
     result = jp.sync(str(src), str(dst))
     assert result.exit_code == 0
-    assert (dst / "Movie (2020) [imdbid-tt001]" / "Movie (2020) [imdbid-tt001] - BD.mkv").is_file()
+    assert (
+        dst / "Movie (2020) [imdbid-tt001]" / "Movie (2020) [imdbid-tt001] - BD.mkv"
+    ).is_file()
 
 
 def test_sync_stats_match_pipeline(tmp_path: Path):
