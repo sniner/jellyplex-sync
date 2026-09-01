@@ -38,10 +38,26 @@ addopts = "-ra -q"
 testpaths = ["tests"]
 
 [tool.pyright]
-typeCheckingMode = "standard"
+typeCheckingMode = "strict"
 useLibraryCodeForTypes = true
 venvPath = "."
 venv = ".venv"
+
+# Tests stay at standard-level strictness: annotating every pytest
+# fixture parameter adds noise, not safety. The library itself is
+# checked strict.
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+reportUnknownParameterType = false
+reportMissingParameterType = false
+reportUnknownArgumentType = false
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownLambdaType = false
+reportMissingTypeArgument = false
+reportPrivateUsage = false
+reportUnusedCallResult = false
+reportMissingTypeStubs = false
 
 [tool.ruff]
 line-length = 96

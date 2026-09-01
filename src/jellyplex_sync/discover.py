@@ -97,7 +97,11 @@ class TwoLevelDiscoverer:
             )
 
 
-def _movie_key(movie: MovieInfo) -> tuple:
+# Grouping key: (title, year, sorted provider-id pairs).
+_MovieKey = tuple[str, str | None, tuple[tuple[str, str], ...]]
+
+
+def _movie_key(movie: MovieInfo) -> _MovieKey:
     """Hashable grouping key derived from a MovieInfo. Two videos that
     parse to the same title, year, and provider IDs end up in the same
     group — labels and other ephemeral fields are excluded because they
@@ -134,9 +138,9 @@ class FlatDiscoverer:
         *,
         ignored: list[IgnoredEntry] | None = None,
     ) -> Iterable[DiscoveredGroup]:
-        groups: dict[tuple, list[pathlib.Path]] = {}
-        source_paths: dict[tuple, pathlib.Path] = {}
-        movies: dict[tuple, MovieInfo] = {}
+        groups: dict[_MovieKey, list[pathlib.Path]] = {}
+        source_paths: dict[_MovieKey, pathlib.Path] = {}
+        movies: dict[_MovieKey, MovieInfo] = {}
 
         for path in sorted(root.rglob("*")):
             if not path.is_file():
