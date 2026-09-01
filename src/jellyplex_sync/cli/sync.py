@@ -157,8 +157,8 @@ def main() -> None:
 
     if args.json:
         assert stats is not None and reporter is not None
+        from jellyplex_sync.formats import _resolve_formats
         from jellyplex_sync.json_output import write_sync_json
-        from jellyplex_sync.sync import _resolve_formats
 
         resolved = _resolve_formats(
             pathlib.Path(args.source),

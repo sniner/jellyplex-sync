@@ -1,45 +1,42 @@
+"""The use-case layer: sync, diff, plan, and import as callable functions.
+
+Each function is the library-level counterpart of one CLI subcommand:
+resolve the endpoints (formats.py), run the Planner, then act — the
+Realizer for sync/import, compare() for diff, plain rendering for plan.
+Text output lives in report.py, JSON in json_output.py.
+"""
+
 from __future__ import annotations
 
 import logging
 import pathlib
-import re
-from collections.abc import Callable
+import sys
 from dataclasses import dataclass, field
 
+# Backward-compatible re-exports: these lived here before 0.4.
+from .compare import DiffEntry as DiffEntry
+from .compare import DiffResult as DiffResult
+from .compare import MovieOnlyInSource as MovieOnlyInSource
+from .compare import compare
 from .discover import FlatDiscoverer
-from .jellyfin import JellyfinLibraryReader, JellyfinLibraryWriter
+from .formats import guess_library_type as guess_library_type
+from .formats import resolve_endpoints
+from .json_output import write_diff_json, write_plan_json
 from .library import (
-    ACCEPTED_VIDEO_SUFFIXES,
     CollectingReporter,
     FileEvent,
     IgnoredEntry,
-    LibraryReader,
-    LibraryWriter,
     LoggingReporter,
     MovieClash,
     Reporter,
-    dedupe_drops,
 )
 from .materializer import FileMaterializer, HardlinkMaterializer, MoveMaterializer
 from .planner import Planner
-from .plex import PlexLibraryReader, PlexLibraryWriter
 from .realize import Realizer, RealizeStats
+from .report import print_diff, print_plan
 
 log = logging.getLogger(__name__)
 
-
-# Factory pair per shortname. Typed as Callable rather than `type[Protocol]`
-# because Protocol classes don't declare __init__, and pyright treats
-# `type[LibraryReader](path)` as a zero-arg call. The factory shape is
-# what we actually need at the call site: hand it a base_dir, get a
-# Reader / Writer back.
-_ReaderFactory = Callable[[pathlib.Path], LibraryReader]
-_WriterFactory = Callable[[pathlib.Path], LibraryWriter]
-
-_LIBRARY_TYPES: dict[str, tuple[_ReaderFactory, _WriterFactory]] = {
-    PlexLibraryReader.shortname(): (PlexLibraryReader, PlexLibraryWriter),
-    JellyfinLibraryReader.shortname(): (JellyfinLibraryReader, JellyfinLibraryWriter),
-}
 
 # Exit codes of sync() and import_media(), documented in the README.
 _EXIT_OK = 0
@@ -60,92 +57,6 @@ class LibraryStats:
     strays_in_target: list[str] = field(default_factory=list)
     events: list[FileEvent] = field(default_factory=list)
     clashes: list[MovieClash] = field(default_factory=list)
-
-
-def guess_library_type(path: pathlib.Path) -> type[LibraryReader] | None:
-    """Best-effort detection of the on-disk library format.
-
-    Returns the matching `LibraryReader` class, or `None` if the heuristic
-    can't decide.
-    """
-    plex_hints: int = 0
-    jellyfin_hints: int = 0
-    for entry in path.rglob("*"):
-        if entry.suffix.lower() not in ACCEPTED_VIDEO_SUFFIXES:
-            continue
-        fname = entry.stem
-        if re.search(r"\[[a-z]+id-[^\]]+\]", fname, flags=re.IGNORECASE):
-            return JellyfinLibraryReader
-        if re.search(r"\{[a-z]+-[^\}]+\}", fname, flags=re.IGNORECASE):
-            return PlexLibraryReader
-        if re.search(r"\{edition-[^\}]+\}", fname, flags=re.IGNORECASE):
-            return PlexLibraryReader
-        variant = fname.split(" - ")
-        if len(variant) > 1 and re.search(r"\(\d{4}\)", variant[-1]) is None:
-            jellyfin_hints += 1
-        if re.search(r"\[\d{3,4}[pi]\]", fname, flags=re.IGNORECASE):
-            plex_hints += 1
-        if re.search(r"\[[a-z0-9\.\,]+\]", fname, flags=re.IGNORECASE):
-            plex_hints += 1
-    if plex_hints > jellyfin_hints:
-        return PlexLibraryReader
-    elif jellyfin_hints > plex_hints:
-        return JellyfinLibraryReader
-    return None
-
-
-def _opposite(short: str) -> str:
-    return "plex" if short == "jellyfin" else "jellyfin"
-
-
-def _resolve_formats(
-    source_path: pathlib.Path,
-    source_format: str | None,
-    target_format: str | None,
-) -> tuple[str, str] | None:
-    """Pick source and target shortnames from --source-format/--target-format.
-
-    Either side may be "auto" (or None): the source is then sniffed from disk,
-    and the target defaults to the opposite of the source. Both sides explicit
-    with the same value is the lint/normalize mode. Returns None and logs an
-    error if a needed format can't be determined.
-    """
-    src = source_format if source_format and source_format != "auto" else None
-    tgt = target_format if target_format and target_format != "auto" else None
-
-    for label, value in (("source_format", src), ("target_format", tgt)):
-        if value is not None and value not in _LIBRARY_TYPES:
-            raise ValueError(f"Unknown value for parameter {label!r}: {value!r}")
-
-    if src is None:
-        source_type = guess_library_type(source_path)
-        if not source_type:
-            log.error(
-                "Unable to determine source library type, please provide --source-format"
-            )
-            return None
-        src = source_type.shortname()
-
-    if tgt is None:
-        tgt = _opposite(src)
-
-    return src, tgt
-
-
-def _check_source_dir(path: pathlib.Path) -> bool:
-    """Log an error and return False unless `path` is an existing directory.
-
-    Must run before format resolution: sniffing a nonexistent path yields
-    "unable to determine library type", which sends the user chasing the
-    wrong problem when the path is simply mistyped.
-    """
-    if path.is_dir():
-        return True
-    if path.exists():
-        log.error("Source path '%s' is not a directory", path)
-    else:
-        log.error("Source directory '%s' does not exist", path)
-    return False
 
 
 def sync(
@@ -171,18 +82,13 @@ def sync(
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
 
-    if not _check_source_dir(source_path):
+    endpoints = resolve_endpoints(source_path, target_path, source_format, target_format)
+    if endpoints is None:
         return _EXIT_SETUP_ERROR
-
-    resolved = _resolve_formats(source_path, source_format, target_format)
-    if resolved is None:
-        return _EXIT_SETUP_ERROR
-    source_short, target_short = resolved
-
-    source_reader_cls, _ = _LIBRARY_TYPES[source_short]
-    _, target_writer_cls = _LIBRARY_TYPES[target_short]
-    source_reader = source_reader_cls(source_path)
-    target_writer = target_writer_cls(target_path)
+    source_reader = endpoints.source_reader
+    target_writer = endpoints.target_writer
+    source_short = endpoints.source_format
+    target_short = endpoints.target_format
 
     if dry_run:
         log.info("SOURCE %s", source_reader.base_dir)
@@ -308,49 +214,6 @@ def sync(
     return rc
 
 
-# ---------------------------------------------------------------------------
-# diff: read-only comparison of source and target
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class DiffEntry:
-    """Per-movie diff between expected target and actual target contents."""
-
-    target_movie_name: str
-    only_in_source: tuple[str, ...] = ()
-    only_in_target: tuple[str, ...] = ()
-
-
-@dataclass
-class MovieOnlyInSource:
-    """A source movie that has no counterpart in the target. Stores both
-    names so the diff output can show the user what they wrote (the
-    source folder) AND what it would become on the other side (the
-    expected target name) — pre-0.2.2 only the target name was shown,
-    which read as a stray for users browsing their source tree."""
-
-    source_folder: str
-    expected_target: str
-
-
-@dataclass
-class DiffResult:
-    movies_only_in_source: tuple[MovieOnlyInSource, ...] = ()
-    movies_only_in_target: tuple[str, ...] = ()
-    differing_movies: tuple[DiffEntry, ...] = ()
-    drops: tuple = ()
-    ignored: tuple[IgnoredEntry, ...] = ()
-
-    @property
-    def has_differences(self) -> bool:
-        return bool(
-            self.movies_only_in_source
-            or self.movies_only_in_target
-            or self.differing_movies
-        )
-
-
 def diff(
     source: str,
     target: str,
@@ -368,8 +231,6 @@ def diff(
     2 if there's a setup error. With `as_json=True`, emits the machine-
     readable JSON document instead of the human-readable text report.
     """
-    import sys
-
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
@@ -377,107 +238,49 @@ def diff(
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
 
-    if not _check_source_dir(source_path):
+    endpoints = resolve_endpoints(source_path, target_path, source_format, target_format)
+    if endpoints is None:
         return 2
 
-    resolved = _resolve_formats(source_path, source_format, target_format)
-    if resolved is None:
-        return 2
-    source_short, target_short = resolved
-
-    source_reader_cls, _ = _LIBRARY_TYPES[source_short]
-    _, target_writer_cls = _LIBRARY_TYPES[target_short]
-    source_reader = source_reader_cls(source_path)
-    target_writer = target_writer_cls(target_path)
-
-    if not target_writer.base_dir.is_dir():
-        log.error("Target directory '%s' does not exist", target_writer.base_dir)
+    if not endpoints.target_writer.base_dir.is_dir():
+        log.error(
+            "Target directory '%s' does not exist", endpoints.target_writer.base_dir
+        )
         return 2
 
     # 0.3 pipeline: Planner.plan() + compare(plan). The reporter
     # accumulates translation drops while the Planner walks the source;
     # compare() doesn't observe drops (it only reads the target), so we
     # stitch them onto the DiffResult afterwards.
-    from .compare import compare as _compare_plan
-
     reporter = CollectingReporter()
     planner = Planner(
-        reader=source_reader,
-        writer=target_writer,
+        reader=endpoints.source_reader,
+        writer=endpoints.target_writer,
         reporter=reporter,
     )
     plan = planner.plan()
-    result = _compare_plan(plan)
+    result = compare(plan)
     result.drops = tuple(reporter.drops)
 
     if as_json:
-        from .json_output import write_diff_json
-
-        write_diff_json(out, result, source_short, target_short, source_path, target_path)
+        write_diff_json(
+            out,
+            result,
+            endpoints.source_format,
+            endpoints.target_format,
+            source_path,
+            target_path,
+        )
     else:
-        _print_diff(result, source_short, target_short, source_path, target_path, out)
+        print_diff(
+            result,
+            endpoints.source_format,
+            endpoints.target_format,
+            source_path,
+            target_path,
+            out,
+        )
     return 1 if result.has_differences else 0
-
-
-def _print_diff(
-    result: DiffResult,
-    source_short: str,
-    target_short: str,
-    source_path: pathlib.Path,
-    target_path: pathlib.Path,
-    out,
-) -> None:
-    print(
-        f"Comparing source '{source_path}' ({source_short.capitalize()}) "
-        f"against target '{target_path}' ({target_short.capitalize()})",
-        file=out,
-    )
-    print(file=out)
-
-    if result.movies_only_in_source:
-        print(f"Movies only in source ({len(result.movies_only_in_source)}):", file=out)
-        for m in result.movies_only_in_source:
-            print(f"  + '{m.source_folder}'", file=out)
-            print(f"      → would be '{m.expected_target}'", file=out)
-        print(file=out)
-
-    if result.movies_only_in_target:
-        print(f"Movies only in target ({len(result.movies_only_in_target)}):", file=out)
-        for name in result.movies_only_in_target:
-            print(f"  - {name}", file=out)
-        print(file=out)
-
-    if result.differing_movies:
-        print(f"Movies with file differences ({len(result.differing_movies)}):", file=out)
-        for entry in result.differing_movies:
-            print(f"  ~ {entry.target_movie_name}", file=out)
-            for f in entry.only_in_source:
-                print(f"      + {f}", file=out)
-            for f in entry.only_in_target:
-                print(f"      - {f}", file=out)
-        print(file=out)
-
-    if result.drops:
-        distinct = dedupe_drops(list(result.drops))
-        print(f"Translation losses ({len(distinct)} distinct):", file=out)
-        for d in distinct:
-            key = f"{d.key}=" if d.key else ""
-            print(f"  ! {d.kind} {key}{d.value!r}: {d.reason}", file=out)
-        print(file=out)
-
-    if result.ignored:
-        print(f"Ignored in source ({len(result.ignored)}):", file=out)
-        for i in result.ignored:
-            print(f"  ! '{i.path.name}': {i.reason}", file=out)
-        print(file=out)
-
-    if not result.has_differences:
-        print("In sync. No differences found.", file=out)
-
-
-# ---------------------------------------------------------------------------
-# plan: build a Plan without acting on it
-# ---------------------------------------------------------------------------
 
 
 def plan(
@@ -495,8 +298,6 @@ def plan(
     2 if there was a setup error (paths or format resolution). Clashes
     and translation losses are reported but don't change the exit code
     — they're informative, not failures."""
-    import sys
-
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
@@ -504,117 +305,25 @@ def plan(
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
 
-    if not _check_source_dir(source_path):
+    endpoints = resolve_endpoints(source_path, target_path, source_format, target_format)
+    if endpoints is None:
         return 2
-
-    resolved = _resolve_formats(source_path, source_format, target_format)
-    if resolved is None:
-        return 2
-    source_short, target_short = resolved
-
-    source_reader_cls, _ = _LIBRARY_TYPES[source_short]
-    _, target_writer_cls = _LIBRARY_TYPES[target_short]
-    source_reader = source_reader_cls(source_path)
-    target_writer = target_writer_cls(target_path)
-
     # The target dir doesn't need to exist for `plan` — the whole point
     # is to ask "what WOULD happen" before any sync sets up the target.
 
     reporter = CollectingReporter()
     planner = Planner(
-        reader=source_reader,
-        writer=target_writer,
+        reader=endpoints.source_reader,
+        writer=endpoints.target_writer,
         reporter=reporter,
     )
     built_plan = planner.plan()
 
     if as_json:
-        from .json_output import write_plan_json
-
         write_plan_json(out, built_plan, drops=tuple(reporter.drops))
     else:
-        _print_plan(built_plan, tuple(reporter.drops), out)
+        print_plan(built_plan, tuple(reporter.drops), out)
     return 0
-
-
-def _print_plan(
-    built_plan,
-    drops: tuple,
-    out,
-) -> None:
-    print(
-        f"Plan for source '{built_plan.source_root}' "
-        f"({built_plan.source_format.capitalize()}) → target "
-        f"'{built_plan.target_root}' ({built_plan.target_format.capitalize()})",
-        file=out,
-    )
-    print(file=out)
-
-    if built_plan.movies:
-        print(f"Movies ({len(built_plan.movies)}):", file=out)
-        for m in built_plan.movies:
-            print(f"  ~ '{m.source_path.name}' → '{m.target_folder.name}'", file=out)
-            for v in m.videos:
-                line = f"      '{v.source.name}' → '{v.target_name}'"
-                if v.disambiguation is not None:
-                    line += f"  [{v.disambiguation.strategy}]"
-                print(line, file=out)
-            if m.loose_files:
-                names = ", ".join(f"'{f.target_name}'" for f in m.loose_files)
-                print(f"      loose: {names}", file=out)
-            for a in m.assets:
-                count = _count_asset_files(a)
-                suffix = "file" if count == 1 else "files"
-                print(f"      assets: '{a.folder_name}' ({count} {suffix})", file=out)
-        print(file=out)
-
-    if built_plan.folder_clashes:
-        print(f"Folder clashes ({len(built_plan.folder_clashes)}):", file=out)
-        for fc in built_plan.folder_clashes:
-            srcs = ", ".join(f"'{s}'" for s in fc.source_folder_names)
-            print(f"  ! {srcs} → '{fc.target_folder_name}'", file=out)
-        print(file=out)
-
-    if built_plan.clashes:
-        print(f"Movie clashes ({len(built_plan.clashes)}):", file=out)
-        for c in built_plan.clashes:
-            srcs = ", ".join(f"'{s}'" for s in c.source_filenames)
-            print(
-                f"  ! in '{c.movie_folder}': {srcs} → '{c.target_filename}'",
-                file=out,
-            )
-        print(file=out)
-
-    if drops:
-        distinct = dedupe_drops(list(drops))
-        print(f"Translation losses ({len(distinct)} distinct):", file=out)
-        for d in distinct:
-            key = f"{d.key}=" if d.key else ""
-            print(f"  ! {d.kind} {key}{d.value!r}: {d.reason}", file=out)
-        print(file=out)
-
-    if built_plan.ignored:
-        print(f"Ignored in source ({len(built_plan.ignored)}):", file=out)
-        for i in built_plan.ignored:
-            print(f"  ! '{i.path.name}': {i.reason}", file=out)
-        print(file=out)
-
-    if not (
-        built_plan.movies
-        or built_plan.folder_clashes
-        or built_plan.clashes
-        or built_plan.ignored
-    ):
-        print("Empty plan. Nothing to sync.", file=out)
-
-
-def _count_asset_files(asset) -> int:
-    return len(asset.files) + sum(_count_asset_files(sf) for sf in asset.subfolders)
-
-
-# ---------------------------------------------------------------------------
-# import: move files from a staging area into a structured library
-# ---------------------------------------------------------------------------
 
 
 def import_media(
@@ -648,18 +357,13 @@ def import_media(
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
 
-    if not _check_source_dir(source_path):
+    endpoints = resolve_endpoints(source_path, target_path, source_format, target_format)
+    if endpoints is None:
         return _EXIT_SETUP_ERROR
-
-    resolved = _resolve_formats(source_path, source_format, target_format)
-    if resolved is None:
-        return _EXIT_SETUP_ERROR
-    source_short, target_short = resolved
-
-    source_reader_cls, _ = _LIBRARY_TYPES[source_short]
-    _, target_writer_cls = _LIBRARY_TYPES[target_short]
-    source_reader = source_reader_cls(source_path)
-    target_writer = target_writer_cls(target_path)
+    source_reader = endpoints.source_reader
+    target_writer = endpoints.target_writer
+    source_short = endpoints.source_format
+    target_short = endpoints.target_format
 
     if dry_run:
         log.info("SOURCE %s (staging)", source_reader.base_dir)
@@ -728,4 +432,4 @@ def import_media(
             len(lib_stats.clashes),
         )
 
-    return 0
+    return _EXIT_OK

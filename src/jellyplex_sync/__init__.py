@@ -1,3 +1,7 @@
+from .compare import (
+    DiffEntry,
+    DiffResult,
+)
 from .jellyfin import (
     JellyfinLibraryReader,
     JellyfinLibraryWriter,
@@ -41,8 +45,6 @@ from .plex import (
     PlexLibraryWriter,
 )
 from .sync import (
-    DiffEntry,
-    DiffResult,
     diff,
     import_media,
     plan,

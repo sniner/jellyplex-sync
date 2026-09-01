@@ -5,18 +5,55 @@ the source would produce?" In the 0.3 pipeline this becomes trivially
 expressible: build the Plan (no I/O on target), then compare it to
 whatever currently sits on the target filesystem.
 
-The shape of `DiffResult` is preserved from sync.py so the public CLI
-output and `--json` schema don't move. `drops` is left empty here —
-they belong to the Reporter the caller fed to the Planner; the caller
-can stitch them onto the DiffResult if they want them in the document.
+`drops` is left empty by `compare()` — translation losses belong to
+the Planner run that built the Plan; the caller stitches them onto the
+DiffResult if they should appear in the report.
 """
 
 from __future__ import annotations
 
-import pathlib
+from dataclasses import dataclass
 
+from .library import Drop, IgnoredEntry
 from .plan import Plan
-from .sync import DiffEntry, DiffResult, MovieOnlyInSource
+
+
+@dataclass
+class DiffEntry:
+    """Per-movie diff between expected target and actual target contents."""
+
+    target_movie_name: str
+    only_in_source: tuple[str, ...] = ()
+    only_in_target: tuple[str, ...] = ()
+
+
+@dataclass
+class MovieOnlyInSource:
+    """A source movie that has no counterpart in the target. Stores both
+    names so the diff output can show the user what they wrote (the
+    source folder) AND what it would become on the other side (the
+    expected target name) — pre-0.2.2 only the target name was shown,
+    which read as a stray for users browsing their source tree."""
+
+    source_folder: str
+    expected_target: str
+
+
+@dataclass
+class DiffResult:
+    movies_only_in_source: tuple[MovieOnlyInSource, ...] = ()
+    movies_only_in_target: tuple[str, ...] = ()
+    differing_movies: tuple[DiffEntry, ...] = ()
+    drops: tuple[Drop, ...] = ()
+    ignored: tuple[IgnoredEntry, ...] = ()
+
+    @property
+    def has_differences(self) -> bool:
+        return bool(
+            self.movies_only_in_source
+            or self.movies_only_in_target
+            or self.differing_movies
+        )
 
 
 def compare(plan: Plan) -> DiffResult:
@@ -71,12 +108,3 @@ def compare(plan: Plan) -> DiffResult:
         differing_movies=tuple(differing),
         ignored=tuple(plan.ignored),
     )
-
-
-def _planned_target_folder(plan: Plan, name: str) -> pathlib.Path | None:
-    """Helper: find the absolute target folder for a planned-movie name,
-    if any. Convenience for callers that want to print full paths."""
-    for m in plan.movies:
-        if m.target_folder.name == name:
-            return m.target_folder
-    return None

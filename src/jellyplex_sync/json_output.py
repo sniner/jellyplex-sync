@@ -20,7 +20,8 @@ from .library import Drop, FileEvent, FolderClash, IgnoredEntry, MovieClash, ded
 from .plan import Plan, PlannedAsset, PlannedFile, PlannedMovie
 
 if TYPE_CHECKING:
-    from .sync import DiffResult, LibraryStats
+    from .compare import DiffResult
+    from .sync import LibraryStats
 
 
 def _endpoint_payload(path: pathlib.Path, fmt: str) -> dict[str, Any]:
