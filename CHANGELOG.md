@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+- **Missing source path reported as such** — pointing `sync`, `diff`, `plan`, or `import` at a
+  nonexistent source directory now says "Source directory ... does not exist" instead of the
+  misleading "Unable to determine source library type". Exit codes are unchanged
+
 ## [0.3.4] - 2026-05-27
 
 ### Added

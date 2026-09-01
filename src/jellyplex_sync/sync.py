@@ -41,6 +41,12 @@ _LIBRARY_TYPES: dict[str, tuple[_ReaderFactory, _WriterFactory]] = {
     JellyfinLibraryReader.shortname(): (JellyfinLibraryReader, JellyfinLibraryWriter),
 }
 
+# Exit codes of sync() and import_media(), documented in the README.
+_EXIT_OK = 0
+_EXIT_SETUP_ERROR = 1
+_EXIT_FOLDER_CLASH = 2
+_EXIT_REMOVE_ERRORS = 3
+
 
 @dataclass
 class LibraryStats:
@@ -125,6 +131,22 @@ def _resolve_formats(
     return src, tgt
 
 
+def _check_source_dir(path: pathlib.Path) -> bool:
+    """Log an error and return False unless `path` is an existing directory.
+
+    Must run before format resolution: sniffing a nonexistent path yields
+    "unable to determine library type", which sends the user chasing the
+    wrong problem when the path is simply mistyped.
+    """
+    if path.is_dir():
+        return True
+    if path.exists():
+        log.error("Source path '%s' is not a directory", path)
+    else:
+        log.error("Source directory '%s' does not exist", path)
+    return False
+
+
 def sync(
     source: str,
     target: str,
@@ -148,9 +170,12 @@ def sync(
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
 
+    if not _check_source_dir(source_path):
+        return _EXIT_SETUP_ERROR
+
     resolved = _resolve_formats(source_path, source_format, target_format)
     if resolved is None:
-        return 1
+        return _EXIT_SETUP_ERROR
     source_short, target_short = resolved
 
     source_reader_cls, _ = _LIBRARY_TYPES[source_short]
@@ -171,16 +196,12 @@ def sync(
             target_short.capitalize(),
         )
 
-    if not source_reader.base_dir.is_dir():
-        log.error("Source directory '%s' does not exist", source_reader.base_dir)
-        return 1
-
     if not target_writer.base_dir.is_dir():
         if create:
             target_writer.base_dir.mkdir(parents=True)
         else:
             log.error("Target directory '%s' does not exist", target_writer.base_dir)
-            return 1
+            return _EXIT_SETUP_ERROR
 
     lib_stats = stats if stats is not None else LibraryStats()
 
@@ -343,6 +364,9 @@ def diff(
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
 
+    if not _check_source_dir(source_path):
+        return 2
+
     resolved = _resolve_formats(source_path, source_format, target_format)
     if resolved is None:
         return 2
@@ -353,9 +377,6 @@ def diff(
     source_reader = source_reader_cls(source_path)
     target_writer = target_writer_cls(target_path)
 
-    if not source_reader.base_dir.is_dir():
-        log.error("Source directory '%s' does not exist", source_reader.base_dir)
-        return 2
     if not target_writer.base_dir.is_dir():
         log.error("Target directory '%s' does not exist", target_writer.base_dir)
         return 2
@@ -470,6 +491,9 @@ def plan(
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
 
+    if not _check_source_dir(source_path):
+        return 2
+
     resolved = _resolve_formats(source_path, source_format, target_format)
     if resolved is None:
         return 2
@@ -480,9 +504,6 @@ def plan(
     source_reader = source_reader_cls(source_path)
     target_writer = target_writer_cls(target_path)
 
-    if not source_reader.base_dir.is_dir():
-        log.error("Source directory '%s' does not exist", source_reader.base_dir)
-        return 2
     # The target dir doesn't need to exist for `plan` — the whole point
     # is to ask "what WOULD happen" before any sync sets up the target.
 
@@ -614,9 +635,12 @@ def import_media(
     source_path = pathlib.Path(source)
     target_path = pathlib.Path(target)
 
+    if not _check_source_dir(source_path):
+        return _EXIT_SETUP_ERROR
+
     resolved = _resolve_formats(source_path, source_format, target_format)
     if resolved is None:
-        return 1
+        return _EXIT_SETUP_ERROR
     source_short, target_short = resolved
 
     source_reader_cls, _ = _LIBRARY_TYPES[source_short]
@@ -637,16 +661,12 @@ def import_media(
             target_short.capitalize(),
         )
 
-    if not source_reader.base_dir.is_dir():
-        log.error("Source directory '%s' does not exist", source_reader.base_dir)
-        return 1
-
     if not target_writer.base_dir.is_dir():
         if create:
             target_writer.base_dir.mkdir(parents=True)
         else:
             log.error("Target directory '%s' does not exist", target_writer.base_dir)
-            return 1
+            return _EXIT_SETUP_ERROR
 
     lib_stats = stats if stats is not None else LibraryStats()
 
