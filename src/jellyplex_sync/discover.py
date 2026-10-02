@@ -71,6 +71,11 @@ class TwoLevelDiscoverer:
         ignored: list[IgnoredEntry] | None = None,
     ) -> Iterable[DiscoveredGroup]:
         for entry in sorted(root.glob("*")):
+            if entry.name.startswith("."):
+                # OS/sync junk (.DS_Store, .stversions, .Trash, ...), skipped
+                # without a report at every level. The readers would accept
+                # such a name as a movie title.
+                continue
             if not entry.is_dir():
                 if ignored is not None:
                     ignored.append(IgnoredEntry(entry, "not a directory"))
@@ -80,8 +85,6 @@ class TwoLevelDiscoverer:
             loose: list[pathlib.Path] = []
             for child in entry.glob("*"):
                 if child.name.startswith("."):
-                    # OS/sync junk (.DS_Store, .stversions, ...). Skipped
-                    # in both file and folder form, matching legacy behaviour.
                     continue
                 if child.is_file() and child.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
                     videos.append(child)
@@ -145,7 +148,10 @@ class FlatDiscoverer:
         for path in sorted(root.rglob("*")):
             if not path.is_file():
                 continue
-            if path.name.startswith("."):
+            # Dot-files and everything below a dot-folder (.Trash,
+            # .stversions). Only the parts below root count: the staging
+            # root itself may lie inside a dot-folder.
+            if any(part.startswith(".") for part in path.relative_to(root).parts):
                 continue
             if path.suffix.lower() not in ACCEPTED_VIDEO_SUFFIXES:
                 if ignored is not None:

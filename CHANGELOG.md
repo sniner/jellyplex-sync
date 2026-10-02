@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+- **Hidden folders at the top of the source library are no longer synced as movies.** Folders
+  such as `.stversions` or `.Trash` were skipped inside movie folders, but not at the top
+  level. Copies that earlier versions created in the target now count as strays, and
+  `--delete` removes them. Hidden files at the top level (`.DS_Store`) no longer appear as
+  ignored items
+- **`import` skips files inside hidden folders.** Videos in `.Trash` or `.stversions` were
+  imported, and with the default `--move` moved out of that folder
+
 ## [0.4.0] - 2026-09-01
 
 ### Breaking changes

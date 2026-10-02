@@ -68,6 +68,19 @@ def test_dot_files_inside_groups_are_skipped(library):
     assert all(not p.name.startswith(".") for p in a.video_files + a.loose_files + a.asset_dirs)
 
 
+def test_dot_entries_at_root_are_skipped_silently(tmp_path):
+    root = tmp_path / "lib"
+    root.mkdir()
+    (root / "Movie (2020)").mkdir()
+    (root / ".stversions").mkdir()
+    (root / ".stversions" / "Movie (2020).mkv").write_text("v")
+    (root / ".DS_Store").write_text("ds")
+    ignored: list[IgnoredEntry] = []
+    groups = list(TwoLevelDiscoverer().discover(root, ignored=ignored))
+    assert [g.source_path.name for g in groups] == ["Movie (2020)"]
+    assert ignored == []
+
+
 def test_empty_library_yields_nothing(tmp_path):
     root = tmp_path / "empty"
     root.mkdir()

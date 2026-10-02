@@ -146,6 +146,24 @@ def test_dot_files_skipped(tmp_path, preader):
     assert all(not e.path.name.startswith(".") for e in ignored)
 
 
+def test_files_in_dot_folders_skipped(tmp_path, preader):
+    _touch(tmp_path / ".Trash" / "Movie A (2020) {imdb-tt001}.mkv")
+    _touch(tmp_path / "unsorted" / ".stversions" / "Movie B (2021) {imdb-tt002}.mkv")
+    _touch(tmp_path / ".stversions" / "notes.txt")
+    _touch(tmp_path / "Movie C (2022) {imdb-tt003}.mkv")
+    ignored: list[IgnoredEntry] = []
+    groups = list(FlatDiscoverer(preader).discover(tmp_path, ignored=ignored))
+    assert [g.source_path.name for g in groups] == ["Movie C (2022) {imdb-tt003}"]
+    assert ignored == []
+
+
+def test_staging_root_inside_dot_folder(tmp_path, preader):
+    root = tmp_path / ".staging"
+    _touch(root / "Movie (2020) {imdb-tt001}.mkv")
+    groups = list(FlatDiscoverer(preader).discover(root))
+    assert len(groups) == 1
+
+
 def test_empty_root_yields_nothing(tmp_path, preader):
     groups = list(FlatDiscoverer(preader).discover(tmp_path))
     assert groups == []
