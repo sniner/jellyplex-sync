@@ -36,8 +36,9 @@ Jellyfin labels live outside brackets, the internal ones live inside.
 
 The engine is a three-phase pipeline: **discover → plan → realize**,
 with the `Plan` as an immutable first-class artefact between phases.
-Building a Plan is side-effect free; only the Realizer touches the
-target filesystem.
+Building a Plan is side-effect free; it reads the target only to find
+ignore markers (see below). Only the Realizer writes to the target
+filesystem.
 
 ### Data flow
 
@@ -157,6 +158,11 @@ class Plan:
     clashes: tuple[MovieClash, ...] = ()       # rare with hash fallback
     folder_clashes: tuple[FolderClash, ...] = ()
     protected_folders: tuple[str, ...] = ()    # clash-skipped movies — never strays
+    marked_in_source: tuple[pathlib.Path, ...] = ()   # skipped, see "Ignore marker"
+    marked_in_target: tuple[pathlib.Path, ...] = ()   # never written to, never strays
+
+    @property
+    def locked_root(self) -> pathlib.Path | None: ...  # a marked library root
 
 @dataclass(frozen=True)
 class DisambiguationNote:
@@ -291,8 +297,12 @@ class SourceDiscoverer(Protocol):
     def discover(
         self, root: pathlib.Path,
         *, ignored: list[IgnoredEntry] | None = None,
+        marked: list[pathlib.Path] | None = None,
     ) -> Iterable[DiscoveredGroup]: ...
 ```
+
+Directories that contain the ignore marker are not yielded; they go to
+`marked`.
 
 `TwoLevelDiscoverer` (default) is the classic
 `<library>/<movie-folder>/<files>` layout. Pre-classifies each group's
@@ -361,8 +371,9 @@ class Planner:
     def plan(self) -> Plan: ...
 ```
 
-Pure (modulo Reader I/O for `parse_movie` / `parse_video`). Calling
-`plan()` twice with the same inputs produces equal Plans. That
+Pure (modulo Reader I/O for `parse_movie` / `parse_video`, and reading
+the target for ignore markers). Calling `plan()` twice with the same
+inputs produces equal Plans. That
 property is what makes plans diffable across runs and cacheable
 across phases.
 
@@ -425,6 +436,31 @@ Clash-skipped work is exempt from stray detection: folder names in
 "skipped due to clash" must mean the target stays untouched, even
 under `--delete`.
 
+## Ignore marker
+
+A directory that contains `.jellyplex-sync-ignore` (`library.IGNORE_MARKER`)
+is left out of the run together with everything below it, on both sides:
+
+- **Source**: the discoverers skip marked movie folders and first-level
+  asset folders, the Planner skips marked asset subfolders. All of them
+  end up in `Plan.marked_in_source`.
+- **Target**: the Planner skips a movie whose target folder is marked
+  and an asset whose target folder is marked. At the library level it
+  also records folders no source movie maps to if they contain a marker
+  at any depth, so the Realizer does not count them as strays. All of
+  them end up in `Plan.marked_in_target`.
+- **Removal**: the Realizer's `_MarkerGuard` refuses to remove anything
+  listed in `marked_in_target` or anything that contains a marked
+  directory. That covers markers inside planned movie folders, which
+  the Planner does not search. `compare` applies the same rule, so
+  `diff` does not report what `sync --delete` would keep.
+- **Library roots**: a marker in either root makes the Planner return an
+  empty Plan whose `locked_root` is set, without scanning anything. The
+  Realizer does nothing with such a Plan. A marked source root must not
+  read as an empty library, or `--delete` would clear the target.
+  `sync()` and `import_media()` check the roots before they create the
+  target directory.
+
 ## Compare (`compare.py`)
 
 ```python
@@ -432,7 +468,8 @@ def compare(plan: Plan) -> DiffResult: ...
 ```
 
 Read-only. Walks `plan.target_root` one level deep and subtracts what's
-there from what the Plan expects. The same target-side traversal the
+there from what the Plan expects. Marked folders are no difference (see
+"Ignore marker"). The same target-side traversal the
 old `_compute_diff` did, but the *expected* side comes for free from
 the Plan instead of being re-derived by walking the source again.
 

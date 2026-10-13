@@ -6,7 +6,7 @@ Can't decide between Jellyfin and Plex? This tool might help. It synchronizes yo
 
 The script scans the source library, parses each movie folder for metadata (title, year, optional provider ID), and reproduces the same directory structure in the target location. Rather than copying video files, it creates hard links to avoid extra storage usage. Asset folders (e.g., `extras`, `subtitles`) are also mirrored. Loose top-level files (posters, NFOs, subtitles) are synced 1:1 by default since 0.2.0. With `--delete`, any files or folders in the target that are no longer present in the source will be removed.
 
-> **Warning:** This script will **overwrite the entire target directory**. Do not store or edit anything manually in the target library path. The source library is treated as the **only source of truth**, and any unmatched content in the target folder may be deleted without warning.
+> **Warning:** This script will **overwrite the entire target directory**. Do not store or edit anything manually in the target library path. The source library is treated as the **only source of truth**, and any unmatched content in the target folder may be deleted without warning. Folders you mark with `.jellyplex-sync-ignore` are the exception, see [Excluding folders](#excluding-folders).
 
 > **Note:** This tool is only useful if your media library is well-maintained and each movie resides in its own folder.
 
@@ -127,7 +127,8 @@ Exit codes follow the Unix `diff` convention:
 
 - `0` — in sync.
 - `1` — differences found.
-- `2` — setup error (missing directories, indecipherable format).
+- `2` — setup error (missing directories, indecipherable format), or one of the
+  library folders contains `.jellyplex-sync-ignore`.
 
 #### Example
 
@@ -210,6 +211,28 @@ Preview first, keeping the source:
 jellyplex import --copy --dry-run /mnt/staging /mnt/library/Jellyfin
 ```
 
+### Excluding folders
+
+To exclude a folder and everything below it, put an empty file named `.jellyplex-sync-ignore` into it:
+
+```bash
+touch ~/"Media/Plex/Some Movie (2001) {imdb-tt0000000}/.jellyplex-sync-ignore"
+```
+
+The marker means the same in both directions, so it does not matter whether the library is the source or the target of a run:
+
+- **In the source**, the folder is treated as if it did not exist. Nothing in it is synced or imported.
+- **In the target**, nothing is written into the folder and nothing is removed from it, not even with `--delete`. A marked folder that has no counterpart in the source is not reported as a stray.
+
+The marker works at any level: in a movie folder, in an asset folder such as `other`, or further down. The marker file itself is never copied to the other library.
+
+Things to know:
+
+- **Marking a source folder does not keep its copy in the target.** If the folder was synced before, its copy in the target becomes a stray: it is reported, and `--delete` removes it. The source folder is not touched. To keep the copy, put a marker into the target folder as well.
+- **A marked folder is also kept when `--delete` would remove a folder above it.** If a folder in the target has no counterpart in the source but contains a marked folder at any depth, the whole folder is kept.
+- **A marker in the library folder itself stops the run.** `sync` and `import` change nothing, print a warning and exit with code 0. `diff` exits with code 2, and `plan` shows an empty plan. A marked source library is not treated as an empty library, so `--delete` cannot clear the target this way.
+- At the end of a `sync` or `import` run, the number of marked folders is printed; `--verbose` lists them. `diff` and `plan` always list them. In the `--json` output they are in `marked_in_source` and `marked_in_target`.
+
 ### JSON output
 
 All three subcommands accept `--json` for machine-readable output. The document goes to **stdout**; logs continue to go to stderr. Under `--json`, INFO logs are suppressed unless you pass `--verbose` or `--debug`, so the output pipes cleanly into tools like `jq` without filtering.
@@ -221,9 +244,10 @@ The schema (still evolving — pin a version when consuming):
 - `source` / `target`: `{path, format}` for each endpoint.
 - `dry_run` (sync only): whether the run was a preview.
 - `summary`: counters; the set of fields depends on the operation.
-  - sync: `movies_total`, `movies_processed`, `files_updated`, `files_removed`, `remove_errors`, `items_ignored`, `strays_in_target`, `clashes`.
-  - plan: `movies`, `folder_clashes`, `movie_clashes`, `translation_losses`, `ignored`.
+  - sync: `movies_total`, `movies_processed`, `files_updated`, `files_removed`, `remove_errors`, `items_ignored`, `strays_in_target`, `clashes`, `marked_in_source`, `marked_in_target`.
+  - plan: `movies`, `folder_clashes`, `movie_clashes`, `translation_losses`, `ignored`, `marked_in_source`, `marked_in_target`.
 - `ignored`: list of source-side entries the scanner skipped, each `{path, name, reason}`.
+- `marked_in_source` / `marked_in_target`: full paths of the folders skipped because they contain `.jellyplex-sync-ignore` (see [Excluding folders](#excluding-folders)). A library folder in one of these lists means the run was stopped.
 - `strays_in_target` (sync only): list of names found in target that aren't in source.
 - `translation_losses`: distinct `{kind, key, value, reason}` tuples for labels/attributes the target format can't express. Deduplicated — one entry per distinct loss, not per affected file.
 - `events` (sync only): flat array of per-file actions, each `{action, target, source?, context?}`. Actions are `link`, `replace`, `skip`, `remove` — `link` covers every creation, including copies in `--copy` mode. For `remove`, `context` is `library_stray` / `movie_stray` / `asset_stray`. Action names are the same in `--dry-run` and real runs; the top-level `dry_run` flag tells you which mode you were in.
@@ -295,9 +319,10 @@ This helper can also be used on other NAS systems or Linux servers — schedule 
 - **Hardlinks (default)** — Video files are linked, not copied. Both libraries reference the same physical files on disk. Switch to `--copy` for cross-filesystem setups.
 - **Asset folders** — Subdirectories (e.g., `other`, `interviews`) are processed recursively with the same materialization strategy. Note: rename your Jellyfin `extras` folder to `other`, since Plex does not recognize `extras`.
 - **Loose top-level files** — Sidecar files (`.nfo`, posters, external subtitles, plain notes) at the top of a movie folder are synced 1:1 by default since 0.2.0. Pre-0.2.0 they were silently dropped — which made the tool unsafe for migrations. Dot-files (`.DS_Store`, `.stversions`, …) stay excluded.
-- **Stray items** — With `--delete`, any file or folder in the target that has no counterpart in the source is removed. Without `--delete`, strays are still reported in the summary and the `--json` output, plus a warning at the end of the run points at `--delete`.
+- **Stray items** — With `--delete`, any file or folder in the target that has no counterpart in the source is removed, except folders marked with `.jellyplex-sync-ignore` and folders that contain one. Without `--delete`, strays are still reported in the summary and the `--json` output, plus a warning at the end of the run points at `--delete`.
 - **Ignored items** — Entries the scanner couldn't classify (stray files at the library root, folders whose names don't parse) are reported in the summary and the `--json` `ignored` array. They are *not* carried over to the target — useful to verify before deleting the source.
 - **Hidden files and folders are skipped.** Names starting with a dot (`.DS_Store`, `.stversions`, `.Trash`) are skipped at every level of the source library, by `import` as well. They do not appear in the list of ignored items.
+- **Marked folders are skipped** on both sides, see [Excluding folders](#excluding-folders).
 - **Video-level clashes auto-resolve** — When two source files would translate to the same target name (a common P→J outcome: `[1080p].mkv` and `[1080p] [remux].mkv` both collapse to `- BD.mkv`), a short hash of the source filename gets appended (e.g. `Movie - BD [a3f7c819].mkv`). Both files get synced; spot the hash in the `plan` output or in `--json` via the per-file `disambiguation` field. Pre-0.3 the whole movie was skipped on clash.
 - **Folder-level clashes still abort** — Two source folders mapping to the same target folder name (e.g. via dropped `[bracket]` labels) is a structural error in the source library, not something to silently merge. The run is stopped with exit code 2, the clashing folders are listed, and you're asked to rename one side.
 

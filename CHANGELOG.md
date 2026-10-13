@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Breaking changes
+- **`SourceDiscoverer.discover()` takes a `marked` keyword argument**, a list that receives the
+  folders skipped because they contain `.jellyplex-sync-ignore`. Only affects custom
+  discoverers; both built-in discoverers are updated
+
+### Added
+- **`.jellyplex-sync-ignore` excludes a folder and everything below it** (#7). Put the empty
+  file into a folder in either library. In the source, the folder is treated as if it did not
+  exist. In the target, nothing is written into it and nothing is removed from it, not even with
+  `--delete` or when `--delete` removes a folder above it, and it is not reported as a stray. A
+  marker in a library folder itself stops the run: `sync` and `import` change nothing, `diff`
+  exits with code 2. See "Excluding folders" in the README
+- **Marked folders in reports and JSON.** `sync` and `import` print how many folders were
+  skipped and list them with `--verbose`; `diff` and `plan` list them. The JSON output of `sync`,
+  `diff` and `plan` has the new lists `marked_in_source` and `marked_in_target`, with counts of
+  the same name in the summary of `sync` and `plan`
+
 ### Fixed
 - **Hidden folders at the top of the source library are no longer synced as movies.** Folders
   such as `.stversions` or `.Trash` were skipped inside movie folders, but not at the top

@@ -25,6 +25,7 @@ from .formats import guess_library_type as guess_library_type
 from .formats import resolve_endpoints
 from .json_output import write_diff_json, write_plan_json
 from .library import (
+    IGNORE_MARKER,
     Drop,
     FileEvent,
     IgnoredEntry,
@@ -32,9 +33,10 @@ from .library import (
     MovieClash,
     NullReporter,
     Reporter,
+    is_marked,
 )
 from .materializer import FileMaterializer, HardlinkMaterializer, MoveMaterializer
-from .plan import collect_drops
+from .plan import Plan, collect_drops
 from .planner import Planner
 from .realize import Realizer, RealizeStats
 from .report import print_diff, print_plan
@@ -60,6 +62,8 @@ class LibraryStats:
     strays_in_target: list[str] = field(default_factory=list)
     events: list[FileEvent] = field(default_factory=list)
     clashes: list[MovieClash] = field(default_factory=list)
+    marked_in_source: list[pathlib.Path] = field(default_factory=list)
+    marked_in_target: list[pathlib.Path] = field(default_factory=list)
 
 
 @dataclass
@@ -123,6 +127,19 @@ def sync(
             source_short.capitalize(),
             target_writer.base_dir,
             target_short.capitalize(),
+        )
+
+    if _stop_at_marked_root(
+        source_reader.base_dir,
+        target_writer.base_dir,
+        lib_stats,
+        "synced",
+    ):
+        return SyncResult(
+            exit_code=_EXIT_OK,
+            source_format=source_short,
+            target_format=target_short,
+            stats=lib_stats,
         )
 
     if not target_writer.base_dir.is_dir():
@@ -210,6 +227,8 @@ def sync(
     lib_stats.strays_in_target.extend(realize_stats.strays_in_target)
     lib_stats.events.extend(realize_stats.events)
     lib_stats.clashes.extend(plan.clashes)
+    lib_stats.marked_in_source.extend(plan.marked_in_source)
+    lib_stats.marked_in_target.extend(plan.marked_in_target)
 
     ignored_count = len(lib_stats.ignored)
     stray_count = len(lib_stats.strays_in_target)
@@ -231,6 +250,8 @@ def sync(
         log.info("Ignored root-level item(s) — these are NOT in the target:")
         for item in lib_stats.ignored:
             log.info("  '%s' (%s)", item.path.name, item.reason)
+
+    _log_marked(plan, verbose=verbose)
 
     if strays_kept:
         log.warning(
@@ -278,8 +299,9 @@ def diff(
 
     Read-only: never touches the filesystem. Exit codes follow the Unix
     `diff` convention — 0 if no differences, 1 if differences are found,
-    2 if there's a setup error. With `as_json=True`, emits the machine-
-    readable JSON document instead of the human-readable text report.
+    2 if there's a setup error or a library root contains the ignore
+    marker. With `as_json=True`, emits the machine-readable JSON document
+    instead of the human-readable text report.
     """
     stream: TextIO = out if out is not None else sys.stdout
     source_path = pathlib.Path(source)
@@ -291,6 +313,21 @@ def diff(
 
     if not endpoints.target_writer.base_dir.is_dir():
         log.error("Target directory '%s' does not exist", endpoints.target_writer.base_dir)
+        return 2
+
+    marked = _find_marked_root(
+        endpoints.source_reader.base_dir,
+        endpoints.target_writer.base_dir,
+    )
+    if marked is not None:
+        side, root = marked
+        log.error(
+            "Not compared: the %s library '%s' contains %s. Delete that file to include "
+            "the library",
+            side,
+            root,
+            IGNORE_MARKER,
+        )
         return 2
 
     # 0.3 pipeline: Planner.plan() + compare(plan). The Plan records the
@@ -415,6 +452,19 @@ def import_media(
             target_short.capitalize(),
         )
 
+    if _stop_at_marked_root(
+        source_reader.base_dir,
+        target_writer.base_dir,
+        lib_stats,
+        "imported",
+    ):
+        return SyncResult(
+            exit_code=_EXIT_OK,
+            source_format=source_short,
+            target_format=target_short,
+            stats=lib_stats,
+        )
+
     if not target_writer.base_dir.is_dir():
         if create:
             target_writer.base_dir.mkdir(parents=True)
@@ -450,6 +500,8 @@ def import_media(
     lib_stats.ignored.extend(plan.ignored)
     lib_stats.events.extend(realize_stats.events)
     lib_stats.clashes.extend(plan.clashes)
+    lib_stats.marked_in_source.extend(plan.marked_in_source)
+    lib_stats.marked_in_target.extend(plan.marked_in_target)
 
     verb = "moved" if isinstance(materializer, MoveMaterializer) else "copied"
     summary = (
@@ -465,6 +517,8 @@ def import_media(
         for item in lib_stats.ignored:
             log.info("  '%s' (%s)", item.path.name, item.reason)
 
+    _log_marked(plan, verbose=verbose)
+
     if lib_stats.clashes:
         log.warning(
             "%d movie(s) skipped because two or more source files map to the "
@@ -479,3 +533,61 @@ def import_media(
         stats=lib_stats,
         drops=collect_drops(plan),
     )
+
+
+def _find_marked_root(
+    source_root: pathlib.Path,
+    target_root: pathlib.Path,
+) -> tuple[str, pathlib.Path] | None:
+    """The first library root that contains the ignore marker, with the
+    side it is on."""
+    for side, root in (("source", source_root), ("target", target_root)):
+        if is_marked(root):
+            return side, root
+    return None
+
+
+def _stop_at_marked_root(
+    source_root: pathlib.Path,
+    target_root: pathlib.Path,
+    stats: LibraryStats,
+    verb: str,
+) -> bool:
+    """Check both library roots for the ignore marker before anything is
+    scanned or created. A marked root stops the run; it is recorded in
+    `stats` and reported. Returns True if the run has to stop."""
+    marked = _find_marked_root(source_root, target_root)
+    if marked is None:
+        return False
+    side, root = marked
+    if side == "source":
+        stats.marked_in_source.append(root)
+    else:
+        stats.marked_in_target.append(root)
+    log.warning(
+        "Nothing was %s: the %s library '%s' contains %s. Delete that file to include "
+        "the library",
+        verb,
+        side,
+        root,
+        IGNORE_MARKER,
+    )
+    return True
+
+
+def _log_marked(plan: Plan, *, verbose: bool) -> None:
+    count = len(plan.marked_in_source) + len(plan.marked_in_target)
+    if not count:
+        return
+    if not verbose:
+        log.info(
+            "%d folder(s) skipped because they contain %s. Pass --verbose to list them",
+            count,
+            IGNORE_MARKER,
+        )
+        return
+    log.info("%d folder(s) skipped because they contain %s:", count, IGNORE_MARKER)
+    for path in plan.marked_in_source:
+        log.info("  source '%s'", path.relative_to(plan.source_root))
+    for path in plan.marked_in_target:
+        log.info("  target '%s'", path.relative_to(plan.target_root))

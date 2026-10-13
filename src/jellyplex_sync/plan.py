@@ -5,9 +5,10 @@ would be created in the target library if the sync ran. It is the
 single source of truth for what the Realizer should do, what the
 Comparator should expect, and what the JSON output reports.
 
-Plans are pure data — building one never touches the target filesystem.
-That property is what makes them auditable, serialisable, comparable
-across runs, and safely shareable between phases.
+Plans are pure data. Building one never writes to the target
+filesystem; it reads the target only to find ignore markers. That
+property is what makes them auditable, serialisable, comparable across
+runs, and safely shareable between phases.
 """
 
 from __future__ import annotations
@@ -86,7 +87,17 @@ class Plan:
     `protected_folders` holds the target folder names of source movies
     that could not be planned at all (folder clashes, or every video
     unresolved) — they are absent from `movies`, but the Realizer must
-    not treat an existing target folder of that name as a stray."""
+    not treat an existing target folder of that name as a stray.
+
+    `marked_in_source` and `marked_in_target` hold the directories left
+    out because they contain the ignore marker. On the source side these
+    were not read. On the target side nothing is planned into them, and
+    the Realizer must neither remove them nor count them as strays. The
+    target list covers the library level (marked folders, and marked
+    folders anywhere inside a folder no source movie maps to) and the
+    asset folders the Plan would have written into. Markers deeper
+    inside a planned movie folder are not listed; the Realizer checks
+    for them before it removes anything."""
 
     source_root: pathlib.Path
     target_root: pathlib.Path
@@ -97,6 +108,19 @@ class Plan:
     clashes: tuple[MovieClash, ...] = ()
     folder_clashes: tuple[FolderClash, ...] = ()
     protected_folders: tuple[str, ...] = ()
+    marked_in_source: tuple[pathlib.Path, ...] = ()
+    marked_in_target: tuple[pathlib.Path, ...] = ()
+
+    @property
+    def locked_root(self) -> pathlib.Path | None:
+        """The library root that contains the ignore marker, if any. A
+        marked root locks the whole run: the Plan is empty, and acting on
+        it must not change the target, not even with --delete."""
+        if self.source_root in self.marked_in_source:
+            return self.source_root
+        if self.target_root in self.marked_in_target:
+            return self.target_root
+        return None
 
 
 def collect_drops(plan: Plan) -> tuple[Drop, ...]:

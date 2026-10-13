@@ -66,10 +66,14 @@ def test_sync_json_has_full_schema(tmp_path: Path) -> None:
         "items_ignored": 1,
         "strays_in_target": 0,
         "clashes": 0,
+        "marked_in_source": 0,
+        "marked_in_target": 0,
     }
     assert payload["ignored"] == [
         {"path": str(tmp_path / "stray.txt"), "name": "stray.txt", "reason": "not a directory"}
     ]
+    assert payload["marked_in_source"] == []
+    assert payload["marked_in_target"] == []
     assert payload["translation_losses"] == [
         {"kind": "label", "key": None, "value": "remux", "reason": "no Jellyfin equivalent"}
     ]

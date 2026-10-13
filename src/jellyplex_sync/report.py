@@ -10,7 +10,7 @@ import pathlib
 from typing import TextIO
 
 from .compare import DiffResult
-from .library import Drop, dedupe_drops
+from .library import IGNORE_MARKER, Drop, dedupe_drops
 from .plan import Plan, PlannedAsset, collect_drops
 
 
@@ -60,6 +60,14 @@ def print_diff(
             print(f"  ! '{i.path.name}': {i.reason}", file=out)
         print(file=out)
 
+    _print_marked(
+        result.marked_in_source,
+        result.marked_in_target,
+        source_path.resolve(),
+        target_path.resolve(),
+        out,
+    )
+
     if not result.has_differences:
         print("In sync. No differences found.", file=out)
 
@@ -72,6 +80,15 @@ def print_plan(plan: Plan, out: TextIO) -> None:
         file=out,
     )
     print(file=out)
+
+    if plan.locked_root is not None:
+        side = "source" if plan.locked_root == plan.source_root else "target"
+        print(
+            f"Empty plan: the {side} library contains {IGNORE_MARKER}, a sync would "
+            "change nothing. Delete that file to include the library.",
+            file=out,
+        )
+        return
 
     if plan.movies:
         print(f"Movies ({len(plan.movies)}):", file=out)
@@ -116,6 +133,14 @@ def print_plan(plan: Plan, out: TextIO) -> None:
             print(f"  ! '{i.path.name}': {i.reason}", file=out)
         print(file=out)
 
+    _print_marked(
+        plan.marked_in_source,
+        plan.marked_in_target,
+        plan.source_root,
+        plan.target_root,
+        out,
+    )
+
     if not (plan.movies or plan.folder_clashes or plan.clashes or plan.ignored):
         print("Empty plan. Nothing to sync.", file=out)
 
@@ -128,6 +153,24 @@ def _print_drops(drops: tuple[Drop, ...], out: TextIO) -> None:
     for d in distinct:
         key = f"{d.key}=" if d.key else ""
         print(f"  ! {d.kind} {key}{d.value!r}: {d.reason}", file=out)
+    print(file=out)
+
+
+def _print_marked(
+    in_source: tuple[pathlib.Path, ...],
+    in_target: tuple[pathlib.Path, ...],
+    source_root: pathlib.Path,
+    target_root: pathlib.Path,
+    out: TextIO,
+) -> None:
+    count = len(in_source) + len(in_target)
+    if not count:
+        return
+    print(f"Skipped because they contain {IGNORE_MARKER} ({count}):", file=out)
+    for path in in_source:
+        print(f"  source '{path.relative_to(source_root)}'", file=out)
+    for path in in_target:
+        print(f"  target '{path.relative_to(target_root)}'", file=out)
     print(file=out)
 
 

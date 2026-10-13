@@ -12,9 +12,10 @@ without a side-channel to the Planner's reporter.
 
 from __future__ import annotations
 
+import pathlib
 from dataclasses import dataclass
 
-from .library import Drop, IgnoredEntry
+from .library import Drop, IgnoredEntry, find_marked
 from .plan import Plan, collect_drops
 
 
@@ -41,11 +42,17 @@ class MovieOnlyInSource:
 
 @dataclass
 class DiffResult:
+    """`marked_in_source` and `marked_in_target` are the folders left out
+    of the comparison because they contain the ignore marker. They are
+    no difference: a sync leaves them alone as well."""
+
     movies_only_in_source: tuple[MovieOnlyInSource, ...] = ()
     movies_only_in_target: tuple[str, ...] = ()
     differing_movies: tuple[DiffEntry, ...] = ()
     drops: tuple[Drop, ...] = ()
     ignored: tuple[IgnoredEntry, ...] = ()
+    marked_in_source: tuple[pathlib.Path, ...] = ()
+    marked_in_target: tuple[pathlib.Path, ...] = ()
 
     @property
     def has_differences(self) -> bool:
@@ -62,11 +69,16 @@ def compare(plan: Plan) -> DiffResult:
     as the pre-0.3 diff implementation."""
     planned_folder_names = {m.target_folder.name for m in plan.movies}
     planned_by_name = {m.target_folder.name: m for m in plan.movies}
+    marked_folder_names = {
+        p.relative_to(plan.target_root).parts[0]
+        for p in plan.marked_in_target
+        if p != plan.target_root
+    }
 
     actual: dict[str, set[str]] = {}
     if plan.target_root.is_dir():
         for entry in plan.target_root.iterdir():
-            if not entry.is_dir():
+            if not entry.is_dir() or entry.name in marked_folder_names:
                 continue
             actual[entry.name] = {sub.name for sub in entry.iterdir()}
 
@@ -90,7 +102,15 @@ def compare(plan: Plan) -> DiffResult:
             | {a.folder_name for a in pm.assets}
         )
         src_only = tuple(sorted(expected_files - actual[name]))
-        tgt_only = tuple(sorted(actual[name] - expected_files))
+        # Same rule as the Realizer: an entry that is or holds a marked
+        # folder would not be removed, so it is no difference.
+        tgt_only = tuple(
+            sorted(
+                sub
+                for sub in actual[name] - expected_files
+                if not _holds_marker(plan.target_root / name / sub)
+            )
+        )
         if src_only or tgt_only:
             differing.append(
                 DiffEntry(
@@ -106,4 +126,10 @@ def compare(plan: Plan) -> DiffResult:
         differing_movies=tuple(differing),
         drops=collect_drops(plan),
         ignored=tuple(plan.ignored),
+        marked_in_source=plan.marked_in_source,
+        marked_in_target=plan.marked_in_target,
     )
+
+
+def _holds_marker(path: pathlib.Path) -> bool:
+    return not path.is_symlink() and bool(find_marked(path))

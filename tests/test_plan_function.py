@@ -253,6 +253,8 @@ def test_plan_json_schema_for_simple_library(tmp_path: Path):
         "movie_clashes": 0,
         "translation_losses": 0,
         "ignored": 0,
+        "marked_in_source": 0,
+        "marked_in_target": 0,
     }
     assert len(doc["movies"]) == 1
     m = doc["movies"][0]

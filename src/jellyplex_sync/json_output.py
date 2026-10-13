@@ -34,6 +34,10 @@ def _ignored_payload(
     return [{"path": str(e.path), "name": e.path.name, "reason": e.reason} for e in entries]
 
 
+def _paths_payload(paths: list[pathlib.Path] | tuple[pathlib.Path, ...]) -> list[str]:
+    return [str(p) for p in paths]
+
+
 def _drop_payload(d: Drop) -> dict[str, Any]:
     return {"kind": d.kind, "key": d.key, "value": d.value, "reason": d.reason}
 
@@ -97,8 +101,12 @@ def write_sync_json(
             "items_ignored": len(stats.ignored),
             "strays_in_target": len(stats.strays_in_target),
             "clashes": len(stats.clashes),
+            "marked_in_source": len(stats.marked_in_source),
+            "marked_in_target": len(stats.marked_in_target),
         },
         "ignored": _ignored_payload(stats.ignored),
+        "marked_in_source": _paths_payload(stats.marked_in_source),
+        "marked_in_target": _paths_payload(stats.marked_in_target),
         "strays_in_target": list(stats.strays_in_target),
         "translation_losses": _drops_payload(drops),
         "clashes": _clashes_payload(stats.clashes),
@@ -173,12 +181,16 @@ def write_plan_json(out: TextIO, plan: Plan) -> None:
             "movie_clashes": len(plan.clashes),
             "translation_losses": len(distinct_drops),
             "ignored": len(plan.ignored),
+            "marked_in_source": len(plan.marked_in_source),
+            "marked_in_target": len(plan.marked_in_target),
         },
         "movies": [_planned_movie_payload(m) for m in plan.movies],
         "folder_clashes": _folder_clashes_payload(plan.folder_clashes),
         "movie_clashes": _clashes_payload(list(plan.clashes)),
         "translation_losses": _drops_payload(drops),
         "ignored": _ignored_payload(list(plan.ignored)),
+        "marked_in_source": _paths_payload(plan.marked_in_source),
+        "marked_in_target": _paths_payload(plan.marked_in_target),
     }
     json.dump(payload, out, indent=2)
     out.write("\n")
@@ -218,6 +230,8 @@ def write_diff_json(
         ],
         "translation_losses": _drops_payload(result.drops),
         "ignored": _ignored_payload(result.ignored),
+        "marked_in_source": _paths_payload(result.marked_in_source),
+        "marked_in_target": _paths_payload(result.marked_in_target),
     }
     json.dump(payload, out, indent=2)
     out.write("\n")

@@ -19,7 +19,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Protocol
 
-from .library import ACCEPTED_VIDEO_SUFFIXES, IgnoredEntry, LibraryReader
+from .library import (
+    ACCEPTED_VIDEO_SUFFIXES,
+    IgnoredEntry,
+    LibraryReader,
+    find_marked,
+    is_marked,
+)
 from .model import MovieInfo
 
 
@@ -47,11 +53,16 @@ class DiscoveredGroup:
 
 
 class SourceDiscoverer(Protocol):
+    """Finds candidate groups below `root`. Entries it cannot use go to
+    `ignored`; directories it skips because they contain the ignore
+    marker go to `marked`, `root` included."""
+
     def discover(
         self,
         root: pathlib.Path,
         *,
         ignored: list[IgnoredEntry] | None = None,
+        marked: list[pathlib.Path] | None = None,
     ) -> Iterable[DiscoveredGroup]: ...
 
 
@@ -69,7 +80,12 @@ class TwoLevelDiscoverer:
         root: pathlib.Path,
         *,
         ignored: list[IgnoredEntry] | None = None,
+        marked: list[pathlib.Path] | None = None,
     ) -> Iterable[DiscoveredGroup]:
+        if is_marked(root):
+            if marked is not None:
+                marked.append(root)
+            return
         for entry in sorted(root.glob("*")):
             if entry.name.startswith("."):
                 # OS/sync junk (.DS_Store, .stversions, .Trash, ...), skipped
@@ -80,16 +96,23 @@ class TwoLevelDiscoverer:
                 if ignored is not None:
                     ignored.append(IgnoredEntry(entry, "not a directory"))
                 continue
+            if is_marked(entry):
+                if marked is not None:
+                    marked.append(entry)
+                continue
             videos: list[pathlib.Path] = []
             assets: list[pathlib.Path] = []
             loose: list[pathlib.Path] = []
-            for child in entry.glob("*"):
+            for child in sorted(entry.glob("*")):
                 if child.name.startswith("."):
                     continue
                 if child.is_file() and child.suffix.lower() in ACCEPTED_VIDEO_SUFFIXES:
                     videos.append(child)
                 elif child.is_file():
                     loose.append(child)
+                elif child.is_dir() and is_marked(child):
+                    if marked is not None:
+                        marked.append(child)
                 elif child.is_dir():
                     assets.append(child)
             yield DiscoveredGroup(
@@ -140,10 +163,15 @@ class FlatDiscoverer:
         root: pathlib.Path,
         *,
         ignored: list[IgnoredEntry] | None = None,
+        marked: list[pathlib.Path] | None = None,
     ) -> Iterable[DiscoveredGroup]:
         groups: dict[_MovieKey, list[pathlib.Path]] = {}
         source_paths: dict[_MovieKey, pathlib.Path] = {}
         movies: dict[_MovieKey, MovieInfo] = {}
+
+        marked_dirs = self._marked_dirs(root)
+        if marked is not None:
+            marked.extend(sorted(marked_dirs))
 
         for path in sorted(root.rglob("*")):
             if not path.is_file():
@@ -151,7 +179,9 @@ class FlatDiscoverer:
             # Dot-files and everything below a dot-folder (.Trash,
             # .stversions). Only the parts below root count: the staging
             # root itself may lie inside a dot-folder.
-            if any(part.startswith(".") for part in path.relative_to(root).parts):
+            if _is_hidden(path, root):
+                continue
+            if any(parent in marked_dirs for parent in path.parents):
                 continue
             if path.suffix.lower() not in ACCEPTED_VIDEO_SUFFIXES:
                 if ignored is not None:
@@ -180,3 +210,14 @@ class FlatDiscoverer:
                 loose_files=(),
                 movie=movies[key],
             )
+
+    @staticmethod
+    def _marked_dirs(root: pathlib.Path) -> set[pathlib.Path]:
+        """Marked directories at or below `root`. A marker inside a
+        dot-folder does not count: that folder is skipped anyway, and
+        reporting it would name something the user never sees."""
+        return {d for d in find_marked(root) if not _is_hidden(d, root)}
+
+
+def _is_hidden(path: pathlib.Path, root: pathlib.Path) -> bool:
+    return any(part.startswith(".") for part in path.relative_to(root).parts)

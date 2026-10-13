@@ -12,6 +12,29 @@ log = logging.getLogger(__name__)
 
 ACCEPTED_VIDEO_SUFFIXES = {".mkv", ".m4v"}
 
+# A directory containing this file is left out of every run, together with
+# everything below it: in the source it is not read, in the target nothing
+# is written into it or removed from it.
+IGNORE_MARKER = ".jellyplex-sync-ignore"
+
+
+def is_marked(folder: pathlib.Path) -> bool:
+    """True if `folder` itself contains the ignore marker."""
+    return (folder / IGNORE_MARKER).exists()
+
+
+def find_marked(tree: pathlib.Path) -> list[pathlib.Path]:
+    """The outermost directories at or below `tree` that contain the
+    ignore marker, sorted. A marked directory inside another one is left
+    out, the outer one already covers it. Empty for a file or a missing
+    path."""
+    if not tree.is_dir():
+        return []
+    if is_marked(tree):
+        return [tree]
+    found = {m.parent for m in tree.rglob(IGNORE_MARKER)}
+    return sorted(d for d in found if not any(p in found for p in d.parents))
+
 
 # ---------------------------------------------------------------------------
 # Reporter: how Writers tell the caller about lossy decisions

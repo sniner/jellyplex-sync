@@ -2,8 +2,9 @@
 
 The Planner is a pure function (modulo Reader I/O for `parse_movie` /
 `parse_video`): it reads the source tree, produces an immutable Plan,
-and never touches the target filesystem. The `Realizer` (next module)
-is the only layer that turns a Plan into actions on disk.
+and never writes to the target filesystem. It reads the target only to
+find ignore markers. The `Realizer` (next module) is the only layer
+that turns a Plan into actions on disk.
 
 This separation is what makes the new pipeline auditable: the same
 Plan can be inspected (`plan` subcommand), compared against an existing
@@ -15,6 +16,7 @@ from __future__ import annotations
 import logging
 import pathlib
 from collections import defaultdict
+from collections.abc import Collection
 from dataclasses import dataclass
 
 from .disambig import (
@@ -33,6 +35,8 @@ from .library import (
     LoggingReporter,
     MovieClash,
     Reporter,
+    find_marked,
+    is_marked,
 )
 from .model import MovieInfo
 from .plan import Plan, PlannedAsset, PlannedFile, PlannedMovie
@@ -81,15 +85,24 @@ class Planner:
         if source_root == target_root:
             raise ValueError("Cannot plan a library into itself")
 
+        locked = self._locked_plan(source_root, target_root)
+        if locked is not None:
+            return locked
+
         ignored: list[IgnoredEntry] = []
         clashes: list[MovieClash] = []
+        marked_src: list[pathlib.Path] = []
 
-        candidates_by_target = self._group_candidates(source_root, ignored)
+        candidates_by_target = self._group_candidates(source_root, ignored, marked_src)
+        marked_tgt = self._marked_in_target(target_root, candidates_by_target.keys())
+        marked_movie_folders = {p for p in marked_tgt if p.parent == target_root}
         planned_movies: list[PlannedMovie] = []
         folder_clashes: list[FolderClash] = []
         protected_folders: list[str] = []
 
         for target_name, items in candidates_by_target.items():
+            if target_root / target_name in marked_movie_folders:
+                continue
             if len(items) > 1:
                 folder_clashes.append(
                     FolderClash(
@@ -100,7 +113,12 @@ class Planner:
                 protected_folders.append(target_name)
                 continue
             (candidate,) = items
-            pm, movie_clashes = self._build_planned_movie(candidate, target_root / target_name)
+            pm, movie_clashes = self._build_planned_movie(
+                candidate,
+                target_root / target_name,
+                marked_src,
+                marked_tgt,
+            )
             clashes.extend(movie_clashes)
             if pm is not None:
                 planned_movies.append(pm)
@@ -120,22 +138,66 @@ class Planner:
             clashes=tuple(clashes),
             folder_clashes=tuple(folder_clashes),
             protected_folders=tuple(protected_folders),
+            marked_in_source=tuple(sorted(marked_src)),
+            marked_in_target=tuple(sorted(marked_tgt)),
         )
 
     # ------------------------------------------------------------------
     # internals
     # ------------------------------------------------------------------
 
+    def _locked_plan(self, source_root: pathlib.Path, target_root: pathlib.Path) -> Plan | None:
+        """An empty Plan if either library root is marked, else None.
+        Checked before anything is scanned: a marked source root must not
+        read as an empty library, or --delete would clear the target."""
+        source_marked = is_marked(source_root)
+        target_marked = is_marked(target_root)
+        if not (source_marked or target_marked):
+            return None
+        return Plan(
+            source_root=source_root,
+            target_root=target_root,
+            source_format=self._reader.shortname(),
+            target_format=self._writer.shortname(),
+            marked_in_source=(source_root,) if source_marked else (),
+            marked_in_target=(target_root,) if target_marked else (),
+        )
+
+    def _marked_in_target(
+        self,
+        target_root: pathlib.Path,
+        mapped: Collection[str],
+    ) -> list[pathlib.Path]:
+        """Marked directories at the library level of the target. A folder
+        some source movie maps to counts only if it is marked itself;
+        inside it, the planned asset folders are checked while they are
+        built, and the Realizer checks the rest before removing anything.
+        In a folder no source movie maps to, a marker at any depth counts,
+        so that the folder is not reported as a stray."""
+        if not target_root.is_dir():
+            return []
+        found: list[pathlib.Path] = []
+        for entry in sorted(target_root.iterdir()):
+            if not entry.is_dir():
+                continue
+            if entry.name in mapped:
+                if is_marked(entry):
+                    found.append(entry)
+            else:
+                found.extend(find_marked(entry))
+        return found
+
     def _group_candidates(
         self,
         source_root: pathlib.Path,
         ignored: list[IgnoredEntry],
+        marked: list[pathlib.Path],
     ) -> dict[str, list[_Candidate]]:
         """Run discovery + parse_movie, group surviving candidates by the
         target folder name the Writer would produce. Candidates whose
         folder name doesn't parse are added to `ignored`."""
         grouped: dict[str, list[_Candidate]] = defaultdict(list)
-        for group in self._discoverer.discover(source_root, ignored=ignored):
+        for group in self._discoverer.discover(source_root, ignored=ignored, marked=marked):
             # A discoverer that parsed names to find group boundaries
             # ships the identity with the group; only folder-based
             # discovery leaves the parsing to us.
@@ -163,6 +225,8 @@ class Planner:
         self,
         candidate: _Candidate,
         target_folder: pathlib.Path,
+        marked_src: list[pathlib.Path],
+        marked_tgt: list[pathlib.Path],
     ) -> tuple[PlannedMovie | None, list[MovieClash]]:
         videos_info = [(self._reader.parse_video(p), p) for p in candidate.group.video_files]
 
@@ -191,7 +255,11 @@ class Planner:
             PlannedFile(source=p, target_name=p.name) for p in candidate.group.loose_files
         )
 
-        planned_assets = tuple(self._build_planned_asset(p) for p in candidate.group.asset_dirs)
+        planned_assets: list[PlannedAsset] = []
+        for p in candidate.group.asset_dirs:
+            asset = self._build_planned_asset(p, target_folder / p.name, marked_src, marked_tgt)
+            if asset is not None:
+                planned_assets.append(asset)
 
         # All-clashes corner case: every video in this folder ended up
         # unresolved, and there's nothing else to sync. Returning None
@@ -206,7 +274,7 @@ class Planner:
             movie=candidate.movie,
             videos=planned_videos,
             loose_files=planned_loose,
-            assets=planned_assets,
+            assets=tuple(planned_assets),
             folder_drops=candidate.folder_drops,
             protected_files=tuple(c.target_filename for c in dis_result.unresolved),
         )
@@ -221,14 +289,35 @@ class Planner:
             for drop in pf.drops:
                 self._reporter.drop(drop)
 
-    def _build_planned_asset(self, asset_dir: pathlib.Path) -> PlannedAsset:
+    def _build_planned_asset(
+        self,
+        asset_dir: pathlib.Path,
+        target_dir: pathlib.Path,
+        marked_src: list[pathlib.Path],
+        marked_tgt: list[pathlib.Path],
+    ) -> PlannedAsset | None:
+        """Plan one source asset folder into `target_dir`, recursively.
+        None if `target_dir` is marked: nothing gets written into it.
+        Marked source subfolders are left out and recorded."""
+        if is_marked(target_dir):
+            marked_tgt.append(target_dir)
+            return None
         files: list[PlannedFile] = []
         subfolders: list[PlannedAsset] = []
         for child in sorted(asset_dir.glob("*")):
             if child.name.startswith("."):
                 continue
-            if child.is_dir():
-                subfolders.append(self._build_planned_asset(child))
+            if child.is_dir() and is_marked(child):
+                marked_src.append(child)
+            elif child.is_dir():
+                sub = self._build_planned_asset(
+                    child,
+                    target_dir / child.name,
+                    marked_src,
+                    marked_tgt,
+                )
+                if sub is not None:
+                    subfolders.append(sub)
             elif child.is_file():
                 files.append(PlannedFile(source=child, target_name=child.name))
         return PlannedAsset(
