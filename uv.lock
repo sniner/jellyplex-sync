@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
 
 [[package]]
@@ -43,8 +43,9 @@ wheels = [
 
 [[package]]
 name = "jellyplex-sync"
-version = "0.4.0"
+version = "0.5.0"
 source = { editable = "." }
+default-groups = "all"
 
 [package.dev-dependencies]
 dev = [
